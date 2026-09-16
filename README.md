@@ -1,18 +1,42 @@
-# PCVerse v2 — Atlas maszyny
+<div align="center">
 
-Interaktywne laboratorium edukacyjne o budowie komputera PC. Realistyczny model 3D ustawiony na stole serwisowym i trzy sposoby odkrywania, jak działa maszyna.
+# PCVerse — Atlas maszyny
 
-**Demo:** https://apkmason.dev/pcverse-v2/
+**Interaktywny model 3D peceta. Rozłóż go na części, prześledź drogę danych i sprawdź, co spowalnia maszynę.**
 
-## Co można zrobić
+[**▶ Otwórz demo**](https://apkmason.dev/pcverse-v2/) · React · Three.js · React Three Fiber · Blender · WebGL
 
-- **Anatomia:** siedem podzespołów (CPU, GPU, RAM, płyta główna, SSD, zasilacz, chłodzenie), dla każdego karta katalogowa. Części podświetlają się pod kursorem. Model można rozłożyć, obracać i oglądać każdą część z bliska w ujęciach przód, tył, góra, spód i złącza.
-- **Droga danych:** cztery etapy (SSD → RAM → CPU → GPU oraz zasilanie i ciepło) ze schematem magistrali i testem wiedzy na koniec.
-- **Laboratorium:** gra, render albo wiele aplikacji; rozdzielczość, pojemność RAM i przepływ powietrza. Telemetria pokazuje płynność, temperaturę z progiem 90 °C, obciążenie, moc i zapas zasilacza, a dziennik pomiarów pozwala porównywać kolejne konfiguracje.
-- **Skróty klawiszowe:** A / D / L kanały, 1–7 części, ← / → kolejna część lub etap, E rozłóż, F z bliska, R reset kamery, Spacja start/stop zadania, Esc powrót, ? instrukcja.
-- **Dostępność:** schemat 2D płyty bez WebGL (przełącznik warstw lub adres `?2d`), pełna obsługa klawiaturą, respektowanie `prefers-reduced-motion` i ręczna pauza animacji.
+<img src="docs/explode.webp" alt="Model komputera płynnie rozkłada się na podzespoły i składa z powrotem" width="720" />
 
-To model dydaktyczny, nie benchmark. Wyniki są uproszczonym, deterministycznym modelem zależności, a układ i skala eksponatu są umowne.
+</div>
+
+## Trzy kanały
+
+| Anatomia | Droga danych | Laboratorium |
+| --- | --- | --- |
+| <img src="docs/anatomy.webp" alt="Kanał anatomii z rozłożonym modelem i katalogiem części" /> | <img src="docs/signal.webp" alt="Etap renderowania: przepływ CPU → GPU na schemacie i w modelu" /> | <img src="docs/lab.webp" alt="Laboratorium z telemetrią, wskaźnikiem temperatury i dziennikiem pomiarów" /> |
+| Siedem podzespołów z kartami katalogowymi, podświetlaniem pod kursorem, widokiem rozłożonym i oglądaniem z bliska: przód, tył, góra, spód, złącza. | Cztery etapy od wczytania pliku z SSD po obraz na ekranie, z zasilaniem i ciepłem w tle. Na końcu test wiedzy. | Gra, render lub wiele aplikacji. Zmieniasz rozdzielczość, RAM i przepływ powietrza, a telemetria i dziennik pomiarów pokazują skutki. |
+
+<table>
+  <tr>
+    <td width="42%"><img src="docs/cooler.webp" alt="Zbliżenie wieżowego chłodzenia CPU z ciepłowodami i wentylatorem 120 mm" /></td>
+    <td width="42%"><img src="docs/psu-back.webp" alt="Tył zasilacza z gniazdem IEC, włącznikiem i kratką wentylacyjną" /></td>
+    <td width="16%" rowspan="2"><img src="docs/mobile.webp" alt="Widok na telefonie" /></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/schematic.webp" alt="Schemat 2D płyty głównej widzianej z góry, dostępny bez WebGL" /></td>
+  </tr>
+</table>
+
+## Jak powstało
+
+- **Model w 100% ze skryptów.** Cała scena powstaje w Blenderze 5.2 z kodu Pythona (`scripts/build_atlas.py`), bez ręcznego klikania. Asercje pilnują realizmu i prześwitów: wieżowe chłodzenie z ciepłowodami U i wentylatorem na wlocie, karta prostopadła do płyty w złączu PCIe, zasilacz ATX z gniazdami modułowymi z przodu i gniazdem IEC z tyłu, pamięci w gniazdach A2/B2, osobne wiązki ATX 24-pin, EPS 8-pin i PCIe.
+- **Lekko mimo szczegółów.** 208 tys. trójkątów skompresowanych meshoptem z 10,4 MB do 4,2 MB. Dekoder jest w bundlu, więc strona nie łączy się z żadnym CDN. Cienie są przeliczane tylko przy ruchu, a gdy nikt nie korzysta ze strony, wentylatory zwalniają i scena przestaje renderować.
+- **Interfejs jak przyrząd pomiarowy.** Ciemny stół serwisowy, ekran startowy w stylu BIOS z prawdziwym postępem ładowania, oznaczenia części jak na PCB (U1, PCIE1, DIMM1), skróty klawiszowe (A/D/L, 1–7, E, F, R, Spacja, ?).
+- **Dostępny.** Schemat 2D bez WebGL (`?2d`), pełna obsługa klawiaturą, `prefers-reduced-motion`, ręczna pauza animacji i układ mobilny.
+- **Sprawdzane automatycznie.** Testy symulacji, tras elastycznych przewodów i skompresowanego modelu uruchamia CI przed każdym wdrożeniem na GitHub Pages.
+
+To model dydaktyczny, nie benchmark: wyniki są uproszczonym modelem zależności, a skala eksponatu jest umowna.
 
 ## Uruchomienie
 
@@ -21,44 +45,35 @@ Wymagany Node.js 22.18+ (zalecany 24).
 ```sh
 npm ci
 npm run dev        # http://localhost:5173/pcverse-v2/
-npm test           # symulacja, trasy przewodów, kontrola modelu
-npm run lint
+npm test
 npm run build      # wynik w dist/
-npm run preview    # http://localhost:4173/pcverse-v2/
 ```
 
-Ścieżkę bazową ustawia `vite.config.ts`. Przy każdym pushu na `main` workflow `.github/workflows/deploy.yml` uruchamia lint, testy i build, a potem publikuje stronę na GitHub Pages.
-
-## Model 3D
-
-Model powstaje w całości ze skryptów Blendera 5.2, bez ręcznie klikanej sceny:
+Przebudowa modelu (wymaga Blendera 5.2 w PATH, ok. 6 min):
 
 ```sh
-npm run model:build     # Blender w PATH: budowa sceny + kompresja (ok. 6 min)
+npm run model:build     # scena w Blenderze + kompresja
 npm run model:optimize  # sama kompresja art/export/atlas.raw.glb
 ```
-
-- `scripts/build_atlas.py`, `atlas_details.py`, `finish_atlas.py` budują geometrię, materiały i eksport. Asercje pilnują prześwitów, m.in. chipset–PCIe, VRM–EPS, otwory wentylatorów GPU, ciepłowody–mostek oraz wentylator wieży–DIMM.
-- `scripts/optimize_model.mjs` wykonuje deduplikację, spawanie wierzchołków i kompresję `EXT_meshopt_compression`. Wynik to `public/models/atlas.glb`: ok. 4,2 MB i 208 tys. trójkątów. Dekoder jest w bundlu, więc aplikacja nie łączy się z zewnętrznymi serwerami.
-- Dbałość o realizm: wieżowe chłodzenie CPU (poziome żeberka, cztery ciepłowody U, wentylator 120 mm na wlocie), karta graficzna prostopadła do płyty w złączu PCIe, zasilacz ATX z gniazdami modułowymi z przodu oraz gniazdem IEC i włącznikiem z tyłu, osobne wiązki ATX 24-pin, EPS 8-pin i PCIe 8-pin.
-
-Renderowanie jest oszczędne: DPR maks. 1,5 oraz tryb ECO z DPR 1 i bez cieni. Mapa cieni jest przeliczana tylko wtedy, gdy geometria się przesuwa. Po 45 s bez interakcji wentylatory zwalniają i scena przestaje renderować, a płótno przewinięte poza ekran nie rysuje klatek. Utrata kontekstu WebGL przełącza na schemat 2D.
 
 ## Struktura
 
 ```
-src/App.tsx            stan, układ, skróty klawiszowe
-src/ui/                panele, schemat 2D, telemetria, ekran startowy
-src/atlas/             scena 3D, treść edukacyjna, model symulacji, trasy przewodów, fonty
-public/                model GLB, mapa HDR, favicon
-scripts/               potok modelu (Blender, optymalizacja) i testy Node
-art/textures/          źródła tekstur powierzchni
+src/App.tsx      stan, układ, skróty klawiszowe
+src/ui/          panele, schemat 2D, telemetria, ekran startowy
+src/atlas/       scena 3D, treść, symulacja, trasy przewodów, fonty
+public/          model GLB, mapa HDR, obraz podglądu
+scripts/         potok modelu (Blender, optymalizacja) i testy
+art/textures/    źródła tekstur powierzchni
+docs/            zrzuty do README
 ```
 
-## Zasoby i licencje
+## Zasoby
 
-- Fonty DM Sans i Space Grotesk na licencji SIL Open Font License (`src/atlas/fonts/*-OFL.txt`), serwowane lokalnie.
-- Mapa środowiska `studio_small_03` pochodzi z Poly Haven (CC0).
-- Tekstury powierzchni w `art/textures` wygenerowano narzędziem AI na potrzeby projektu. To ilustracje materiałów, a nie projekty rzeczywistych produktów. Mapy normalnych i chropowatości są generowane matematycznie w `scripts/atlas_details.py`.
+- Fonty DM Sans i Space Grotesk na licencji SIL Open Font License, serwowane lokalnie.
+- Mapa środowiska `studio_small_03` z Poly Haven (CC0).
+- Tekstury powierzchni wygenerowane narzędziem AI na potrzeby projektu; mapy normalnych i chropowatości generowane matematycznie.
 
-Znane ograniczenie: React Three Fiber korzysta z przestarzałego `THREE.Clock`, co daje jedno ostrzeżenie w konsoli.
+---
+
+© 2026 [apkmasondev](https://github.com/apkmasondev). Wszelkie prawa zastrzeżone. Kod jest publiczny do wglądu. Chcesz wykorzystać projekt albo zamówić podobny? Zajrzyj na [apkmason.dev](https://apkmason.dev).
