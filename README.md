@@ -2,7 +2,7 @@
 
 Interaktywne laboratorium edukacyjne o budowie komputera PC. Realistyczny model 3D ustawiony na stole serwisowym i trzy sposoby odkrywania, jak działa maszyna.
 
-**Demo:** https://apkmasondev.github.io/pcverse-v2/
+**Demo:** https://apkmason.dev/pcverse-v2/
 
 ## Co można zrobić
 
