@@ -1,0 +1,808 @@
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import type { ThreeEvent } from '@react-three/fiber';
+import {
+  Environment,
+  Grid,
+  Html,
+  Line,
+  OrbitControls,
+  useGLTF,
+  useProgress,
+} from '@react-three/drei';
+import {
+  Color,
+  BufferGeometry,
+  Group,
+  MathUtils,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  PCFShadowMap,
+  PerspectiveCamera,
+  Vector3,
+  TubeGeometry,
+} from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { parts, steps } from './content';
+import { harnessCurve } from './harness';
+import type { Mode, PartId, Workload } from './content';
+
+const offsets: Record<string, [number, number, number]> = {
+  base: [0, 0, 0],
+  board: [0, 0, 0],
+  cpu: [0, 0.75, 0],
+  cooler: [0, 2.65, 0],
+  gpu: [0, 1.4, 0],
+  gpuWiring: [0, 1.4, 0],
+  ram: [0, 0.85, 0],
+  ssd: [0, 0.95, 0],
+  psu: [0, 0, 0],
+};
+const centers: Record<PartId, [number, number, number]> = {
+  cpu: [0, 0.36, -1.1],
+  gpu: [0.35, 1.4, 0.9],
+  ram: [1.81, 0.65, -1.25],
+  board: [0, 0.25, 0],
+  ssd: [-0.2, 0.2, 1.43],
+  psu: [-4.22, 0.72, -0.35],
+  cooler: [0.1, 1.6, -1.1],
+};
+const partIds = new Set<string>(parts.map((p) => p.id));
+const HOT = new Color('#ff6a2b');
+const MODEL_URL = import.meta.env.BASE_URL + 'models/atlas.glb';
+const ENV_URL = import.meta.env.BASE_URL + 'environments/studio_small_03_1k.hdr';
+
+export interface SceneInsets {
+  left: number;
+  right: number;
+}
+interface Props {
+  isolated: boolean;
+  selected: PartId | null;
+  hovered: PartId | null;
+  onSelect: (id: PartId) => void;
+  onHover: (id: PartId | null) => void;
+  spread: number;
+  mode: Mode;
+  step: number;
+  running: boolean;
+  reduced: boolean;
+  reset: number;
+  low: boolean;
+  insets: SceneInsets;
+  onError: () => void;
+  onStats: (value: string) => void;
+  onProgress: (value: number) => void;
+  onReady: () => void;
+  airflow: number;
+  temperature: number;
+  workload: Workload;
+  onSlow: () => void;
+  /** No user input for a while: ambient fan animation spins down so the GPU can rest. */
+  idle: boolean;
+  /** The canvas is scrolled out of view: nothing needs to be drawn. */
+  onscreen: boolean;
+}
+
+/** True while something in the scene animates on its own and needs a continuous frame loop. */
+function isAnimating({ reduced, low, mode, running, selected, isolated, airflow, idle }: Props) {
+  const visibleFans =
+    !isolated || selected === 'gpu' || selected === 'psu' || selected === 'cooler';
+  return (
+    !reduced &&
+    ((!low && !idle && visibleFans && airflow > 0) ||
+      mode === 'signal' ||
+      running ||
+      (selected === 'cooler' && !isolated && airflow > 0))
+  );
+}
+
+function partOf(object: Object3D | null): PartId | null {
+  let node = object;
+  while (node && !partIds.has(node.name)) node = node.parent;
+  return node ? (node.name as PartId) : null;
+}
+
+function Model(props: Props) {
+  const {
+    selected,
+    hovered,
+    onSelect,
+    onHover,
+    spread,
+    reduced,
+    onStats,
+    mode,
+    isolated,
+    onReady,
+  } = props;
+  const { scene } = useGLTF(MODEL_URL, false, true);
+  const { invalidate } = useThree();
+  // Each root gets its own material copies, so one part can glow without lighting up
+  // every other part that shares the same surface.
+  const { model, materials } = useMemo(() => {
+    const clone = scene.clone(true);
+    const byPart = new Map<string, MeshStandardMaterial[]>();
+    clone.children.forEach((root) => {
+      const copies = new Map<MeshStandardMaterial, MeshStandardMaterial>();
+      root.traverse((o) => {
+        if (!(o instanceof Mesh)) return;
+        o.castShadow = true;
+        o.receiveShadow = true;
+        const swap = (m: MeshStandardMaterial) => {
+          if (!copies.has(m)) {
+            const copy = m.clone();
+            for (const map of [copy.map, copy.normalMap, copy.roughnessMap]) {
+              if (map) map.anisotropy = 8;
+            }
+            if (copy.name === 'Motherboard silkscreen') {
+              copy.color.setRGB(0.7, 0.8, 0.74);
+              copy.metalness = 0;
+              copy.roughness = 1;
+              copy.normalScale.set(0.25, 0.25);
+              copy.envMapIntensity = 0.3;
+            }
+            if (copy.name === 'Moulded silicon packages') {
+              copy.color.multiplyScalar(0.35);
+              copy.envMapIntensity = 0.45;
+            }
+            // The white exhibition plinth reads as a glaring slab on the dark bench.
+            if (root.name === 'base' && (copy.name === 'Ceramic' || copy.name === 'Porcelain')) {
+              copy.color.set(copy.name === 'Ceramic' ? '#0a0d0c' : '#101412');
+              copy.roughness = 0.78;
+              copy.metalness = 0;
+              copy.envMapIntensity = 0.35;
+            }
+            copies.set(m, copy);
+          }
+          return copies.get(m)!;
+        };
+        o.material = Array.isArray(o.material)
+          ? o.material.map((m) => (m instanceof MeshStandardMaterial ? swap(m) : m))
+          : o.material instanceof MeshStandardMaterial
+            ? swap(o.material)
+            : o.material;
+      });
+      byPart.set(root.name, [...copies.values()]);
+    });
+    return { model: clone, materials: byPart };
+  }, [scene]);
+  useEffect(() => () => materials.forEach((list) => list.forEach((m) => m.dispose())), [materials]);
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  const moving = useRef(true);
+  const rotors = useMemo(() => {
+    const found: { node: Object3D; part: string; axis: 'x' | 'y' | 'z' }[] = [];
+    model.traverse((node) => {
+      if (node.userData.rotorAxis && node.children.length > 0)
+        found.push({ node, part: node.parent!.name, axis: node.userData.rotorAxis });
+    });
+    return found;
+  }, [model]);
+  const fanSpeed = useRef(0);
+  const stats = useRef({ stamp: 0, frames: 0, text: '' });
+
+  useEffect(() => {
+    model.children.forEach((o) => {
+      o.visible = !isolated || o.name === selected;
+    });
+    moving.current = true;
+    invalidate();
+  }, [spread, selected, isolated, model, invalidate, props.low]);
+
+  useEffect(() => {
+    materials.forEach((list, id) => {
+      const glow =
+        mode !== 'anatomy' || isolated ? 0 : hovered === id ? 0.085 : selected === id ? 0.03 : 0;
+      list.forEach((m) => {
+        m.emissive.copy(HOT);
+        m.emissiveIntensity = glow;
+      });
+    });
+    invalidate();
+  }, [materials, hovered, selected, mode, isolated, invalidate]);
+
+  useFrame(({ gl, clock }, delta) => {
+    stats.current.frames++;
+    let settling = false;
+    const alpha = reduced ? 1 : 1 - Math.exp(-Math.min(delta, 0.05) * 7);
+    model.children.forEach((o) => {
+      const offset = offsets[o.name];
+      if (!offset) return;
+      const tx = offset[0] * spread,
+        ty = offset[1] * spread,
+        tz = offset[2] * spread;
+      o.position.set(
+        MathUtils.lerp(o.position.x, tx, alpha),
+        MathUtils.lerp(o.position.y, ty, alpha),
+        MathUtils.lerp(o.position.z, tz, alpha),
+      );
+      if (
+        Math.abs(o.position.y - ty) > 0.001 ||
+        Math.abs(o.position.x - tx) > 0.001 ||
+        Math.abs(o.position.z - tz) > 0.001
+      )
+        settling = true;
+    });
+    if (settling || moving.current) {
+      // Shadow maps are cached (see onCreated) and refreshed only while geometry moves.
+      gl.shadowMap.needsUpdate = true;
+      invalidate();
+    }
+    moving.current = settling;
+    // Deliberately slowed rotation stays readable and avoids strobing at low FPS.
+    const powered =
+      !reduced &&
+      (props.running || (!props.low && !props.idle)) &&
+      props.airflow > 0 &&
+      rotors.some(({ part }) => !isolated || selected === part);
+    const load = mode === 'lab' && props.running ? (props.workload === 'render' ? 1 : 0.8) : 0.22;
+    const desiredSpeed = powered ? ((2 + load * 8) * props.airflow) / 100 : 0;
+    fanSpeed.current = reduced
+      ? 0
+      : MathUtils.damp(fanSpeed.current, desiredSpeed, 3, Math.min(delta, 0.05));
+    rotors.forEach(({ node, part, axis }) => {
+      if (!isolated || selected === part)
+        node.rotation[axis] +=
+          Math.min(delta, 0.05) * fanSpeed.current * (part === 'psu' ? 0.65 : 1);
+    });
+    if (powered || fanSpeed.current > 0.01) invalidate();
+    const elapsed = clock.elapsedTime - stats.current.stamp;
+    if (elapsed > 1) {
+      const fps = Math.round(stats.current.frames / elapsed);
+      stats.current.stamp = clock.elapsedTime;
+      stats.current.frames = 0;
+      const text = `${gl.info.render.calls} DRAW · ${(gl.info.render.triangles / 1000).toFixed(0)}K TRI · DPR ${gl.getPixelRatio().toFixed(1)}${isAnimating(props) ? ` · ${fps} FPS` : ' · NA ŻĄDANIE'}`;
+      if (text !== stats.current.text) {
+        stats.current.text = text;
+        onStats(text);
+      }
+    }
+  });
+  const interactive = mode === 'anatomy';
+  return (
+    <primitive
+      object={model}
+      dispose={null}
+      onClick={(event: ThreeEvent<MouseEvent>) => {
+        if (event.delta > 4 || !interactive) return;
+        const id = partOf(event.object);
+        if (id) {
+          event.stopPropagation();
+          onSelect(id);
+        }
+      }}
+      onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+        if (!interactive || event.pointerType === 'touch') return;
+        event.stopPropagation();
+        const id = partOf(event.object);
+        if (id !== hovered) onHover(id);
+      }}
+      onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+        if (!interactive || event.pointerType === 'touch') return;
+        // A matching pointerover follows when the pointer moves onto another mesh.
+        if (event.intersections.length === 0) onHover(null);
+      }}
+    />
+  );
+}
+
+/** Flexible harnesses track the same eased displacement as the exported assemblies.
+ * Their PSU/board ends stay fixed; extra slack clears the board and GPU shroud. */
+function FlexibleHarness({ spread, reduced, isolated, low }: Props) {
+  const { invalidate } = useThree();
+  const current = useRef(0);
+  const dirty = useRef(true);
+  const harness = useMemo(() => {
+    const group = new Group();
+    const material = new MeshStandardMaterial({
+      color: '#161b1e',
+      roughness: 0.88,
+      metalness: 0.02,
+    });
+    const mesh = new Mesh(new BufferGeometry(), material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return { group, material };
+  }, []);
+  const rebuild = (amount: number) => {
+    const geometries: TubeGeometry[] = [];
+    for (let index = 0; index < 20; index++) {
+      const gpu = index < 16;
+      const curve = harnessCurve(index, amount);
+      geometries.push(
+        new TubeGeometry(curve, low ? 28 : 48, gpu ? 0.021 : 0.009, low ? 5 : 6, false),
+      );
+    }
+    const mesh = harness.group.children[0] as Mesh;
+    mesh.geometry.dispose();
+    // eslint-disable-next-line react-hooks/immutability -- Imperative Three.js geometry, updated only from effects/useFrame.
+    mesh.geometry = mergeGeometries(geometries)!;
+    geometries.forEach((geometry) => geometry.dispose());
+  };
+  const rebuildRef = useRef(rebuild);
+  useLayoutEffect(() => {
+    rebuildRef.current = rebuild;
+  });
+  useEffect(() => {
+    rebuildRef.current(current.current);
+    dirty.current = true;
+    invalidate();
+  }, [low, isolated, invalidate]);
+  useEffect(() => {
+    invalidate();
+  }, [spread, reduced, invalidate]);
+  useEffect(
+    () => () => {
+      harness.group.children.forEach((o) => (o as Mesh).geometry.dispose());
+      harness.material.dispose();
+    },
+    [harness],
+  );
+  useFrame(({ gl }, delta) => {
+    if (dirty.current) {
+      dirty.current = false;
+      gl.shadowMap.needsUpdate = true;
+    }
+    const next = reduced
+      ? spread
+      : MathUtils.damp(current.current, spread, 7, Math.min(delta, 0.05));
+    if (Math.abs(next - current.current) > 0.0001) {
+      current.current = next;
+      rebuildRef.current(next);
+      gl.shadowMap.needsUpdate = true;
+      invalidate();
+    }
+  });
+  return <primitive object={harness.group} visible={!isolated} dispose={null} />;
+}
+
+function position(id: PartId, spread: number) {
+  const part = parts.find((p) => p.id === id)!;
+  const offset = offsets[id];
+  return new Vector3(...part.position).add(new Vector3(...offset).multiplyScalar(spread));
+}
+
+function Flow({ spread, step, reduced, running, mode, workload }: Props) {
+  const particles = useRef<Group>(null);
+  const current =
+    steps[mode === 'lab' ? (workload === 'game' ? 2 : workload === 'render' ? 1 : 0) : step];
+  const power = mode === 'signal' && step === 3;
+  const path = useMemo(() => {
+    const start = position(current.from, spread),
+      end = position(current.to, spread);
+    return [
+      start,
+      new Vector3(start.x, start.y + 0.6, start.z),
+      new Vector3(end.x, end.y + 0.6, end.z),
+      end,
+    ];
+  }, [current, spread]);
+  useFrame(({ clock, invalidate }) => {
+    if (!particles.current || reduced || !(mode === 'signal' || running)) return;
+    particles.current.children.forEach((p, i) => {
+      const t = ((clock.elapsedTime * 0.4 + i / 6) % 1) * 3,
+        index = Math.min(2, Math.floor(t));
+      p.position.lerpVectors(path[index], path[index + 1], t - index);
+    });
+    invalidate();
+  });
+  if (mode !== 'signal' && !running) return null;
+  const tone = power ? '#ffc14d' : '#ff6a2b';
+  return (
+    <group>
+      <Line points={path} color={tone} lineWidth={2} dashed dashSize={0.1} gapSize={0.07} />
+      {power && (
+        <Line
+          points={[position('cpu', spread), position('cooler', spread)]}
+          color="#5fd4c4"
+          lineWidth={4}
+        />
+      )}
+      {!reduced && (
+        <group ref={particles}>
+          {Array.from({ length: 6 }, (_, i) => (
+            <mesh key={i}>
+              <sphereGeometry args={[0.05, 10, 10]} />
+              <meshBasicMaterial color={tone} toneMapped={false} />
+            </mesh>
+          ))}
+        </group>
+      )}
+    </group>
+  );
+}
+
+/** Air enters through the tower fan on the +X side, crosses the fin stack and leaves towards the rear I/O. */
+function Airflow({ spread, airflow, temperature, reduced, running, mode, selected }: Props) {
+  const arrows = useRef<Group>(null);
+  const active = (mode === 'lab' && running) || (mode === 'anatomy' && selected === 'cooler');
+  const center = position('cooler', spread);
+  const base = center.y - 0.5;
+  useFrame(({ clock, invalidate }) => {
+    if (!active || reduced || !arrows.current || airflow === 0) return;
+    arrows.current.children.forEach((arrow, i) => {
+      const travel = (clock.elapsedTime * airflow * 0.006 + i / 9) % 1;
+      arrow.position.set(
+        center.x + 1.25 - travel * 2.5,
+        base + ((i % 3) - 1) * 0.45,
+        center.z + (((i * 7) % 3) - 1) * 0.42,
+      );
+    });
+    invalidate();
+  });
+  if (!active) return null;
+  const hot = temperature >= 90;
+  return (
+    <group>
+      <Html position={[center.x, center.y + 0.95, center.z]} center zIndexRange={[4, 0]}>
+        <span className={`airflow-tag ${hot ? 'hot' : ''}`}>
+          ←{' '}
+          {mode === 'lab'
+            ? `AIR ${airflow}% · ${temperature}°C`
+            : 'POWIETRZE PRZECHODZI PRZEZ ŻEBRA'}
+        </span>
+      </Html>
+      {!reduced && airflow > 0 && (
+        <group ref={arrows}>
+          {Array.from({ length: 9 }, (_, i) => (
+            <mesh key={i} rotation={[0, 0, Math.PI / 2]}>
+              <coneGeometry args={[0.045, 0.17, 5]} />
+              <meshBasicMaterial color={hot ? '#ff5a36' : '#5fd4c4'} toneMapped={false} />
+            </mesh>
+          ))}
+        </group>
+      )}
+    </group>
+  );
+}
+
+/** Watches continuous animation only; sparse on-demand frames during a slow drag are not a slow GPU. */
+function PerformanceGuard({
+  onSlow,
+  low,
+  active,
+}: {
+  onSlow: () => void;
+  low: boolean;
+  active: boolean;
+}) {
+  const samples = useRef({ time: 0, frames: 0 });
+  useEffect(() => {
+    samples.current = { time: 0, frames: 0 };
+  }, [active, low]);
+  useFrame((_, delta) => {
+    if (low || !active || delta > 0.5 || delta < 0.001) return;
+    samples.current.time += delta;
+    samples.current.frames++;
+    if (samples.current.frames >= 120) {
+      if (samples.current.frames / samples.current.time < 28) onSlow();
+      samples.current = { time: 0, frames: 0 };
+    }
+  });
+  return null;
+}
+
+function Labels({ selected, hovered, onSelect, onHover, spread, mode, step, isolated }: Props) {
+  if (isolated) return null;
+  const shown: PartId[] =
+    mode === 'signal'
+      ? step === 3
+        ? ['psu', 'board', 'cpu', 'cooler']
+        : [steps[step].from, steps[step].to]
+      : mode === 'lab'
+        ? []
+        : [
+            ...(selected ? [selected] : (['psu', 'gpu', 'ram'] as const)),
+            ...(hovered ? [hovered] : []),
+          ];
+  return (
+    <>
+      {parts
+        .filter((p) => shown.includes(p.id))
+        .map((p) => (
+          <Html
+            key={p.id}
+            position={position(p.id, spread).add(new Vector3(0, 0.15, 0))}
+            center
+            zIndexRange={[5, 0]}
+          >
+            <button
+              className={`part-pin ${selected === p.id ? 'active' : ''} ${hovered === p.id ? 'hover' : ''}`}
+              onClick={() => onSelect(p.id)}
+              onPointerEnter={() => mode === 'anatomy' && onHover(p.id)}
+              onPointerLeave={() => mode === 'anatomy' && onHover(null)}
+              aria-label={`Poznaj: ${p.name}`}
+              disabled={mode !== 'anatomy'}
+              tabIndex={-1}
+            >
+              <span>{p.ref}</span>
+              {p.label}
+            </button>
+          </Html>
+        ))}
+    </>
+  );
+}
+
+/** Camera offset from the orbit target that fits the exhibit (or one part) in the visible area. */
+function framing(
+  focusPart: PartId | null,
+  size: { width: number; height: number },
+  insets: SceneInsets,
+) {
+  const visible = Math.max(240, size.width - insets.left - insets.right);
+  const aspect = visible / Math.max(1, size.height);
+  if (!focusPart)
+    return new Vector3(10.5, 9.9, 13).multiplyScalar(MathUtils.clamp(1.2 / aspect, 0.92, 1.4));
+  const scale =
+    focusPart === 'gpu' || focusPart === 'board'
+      ? 1.15
+      : focusPart === 'psu'
+        ? 0.95
+        : focusPart === 'cpu' || focusPart === 'ssd'
+          ? 0.4
+          : 0.65;
+  return new Vector3(5, 4, 7).multiplyScalar(scale * MathUtils.clamp(1 / aspect, 1, 1.75));
+}
+
+function CameraRig({
+  reset,
+  onError,
+  isolated,
+  selected,
+  spread,
+  insets,
+  reduced,
+  view,
+}: Pick<Props, 'reset' | 'onError' | 'isolated' | 'selected' | 'spread' | 'insets' | 'reduced'> & {
+  view: string;
+}) {
+  const { camera, gl, invalidate, size } = useThree();
+  const focusPart = isolated ? selected : null;
+  const focusSpread = isolated ? spread : 0;
+  const target = useMemo(
+    () =>
+      focusPart
+        ? new Vector3(...centers[focusPart]).add(
+            new Vector3(...offsets[focusPart]).multiplyScalar(focusSpread),
+          )
+        : new Vector3(-0.5, 1.1, 0),
+    [focusPart, focusSpread],
+  );
+  const frame = useRef({ size, insets });
+  useLayoutEffect(() => {
+    frame.current = { size, insets };
+  });
+
+  // Shift the projection centre so the exhibit sits in the visible gap between the side panels
+  // instead of hiding behind them. Resizing only re-frames; it never throws away the user's orbit.
+  useEffect(() => {
+    const perspective = camera as PerspectiveCamera;
+    const shift = Math.round((insets.left - insets.right) / 2);
+    if (shift)
+      perspective.setViewOffset(size.width, size.height, -shift, 0, size.width, size.height);
+    else perspective.clearViewOffset();
+    perspective.updateProjectionMatrix();
+    invalidate();
+  }, [camera, size.width, size.height, insets.left, insets.right, invalidate]);
+  useEffect(() => () => (camera as PerspectiveCamera).clearViewOffset(), [camera]);
+
+  useEffect(() => {
+    const offset = framing(focusPart, frame.current.size, frame.current.insets);
+    if (focusPart && view !== 'orbit') {
+      const distance = offset.length() * (view === 'top' || view === 'bottom' ? 1.2 : 1);
+      offset
+        .copy(
+          view === 'top'
+            ? new Vector3(0, 1, 0.001)
+            : view === 'bottom'
+              ? new Vector3(0, -1, 0.001)
+              : view === 'back'
+                ? focusPart === 'psu'
+                  ? // ATX rear wall: IEC inlet, switch and exhaust face away from the board.
+                    new Vector3(-1, 0.15, 0.12)
+                  : new Vector3(-0.15, 0.15, -1)
+                : view === 'ports'
+                  ? focusPart === 'psu'
+                    ? new Vector3(1, 0.18, 0.12)
+                    : new Vector3(-1, 0.18, 0.04)
+                  : new Vector3(0, 0.12, 1),
+        )
+        .normalize()
+        .multiplyScalar(distance);
+    }
+    camera.position.copy(target).add(offset);
+    camera.lookAt(target);
+    invalidate();
+  }, [reset, camera, invalidate, focusPart, target, view]);
+
+  // When a side panel appears or changes width, keep the user's viewing angle and only adjust
+  // the distance, so the exhibit still fits the space left between the panels.
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (!fitted.current) {
+      fitted.current = true;
+      return;
+    }
+    const distance = framing(focusPart, frame.current.size, {
+      left: insets.left,
+      right: insets.right,
+    }).length();
+    const direction = camera.position.clone().sub(target).normalize();
+    camera.position.copy(target).add(direction.multiplyScalar(distance));
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only panel changes should re-fit
+  }, [insets.left, insets.right]);
+
+  useEffect(() => {
+    const handle = (event: Event) => {
+      event.preventDefault();
+      onError();
+    };
+    gl.domElement.addEventListener('webglcontextlost', handle);
+    return () => gl.domElement.removeEventListener('webglcontextlost', handle);
+  }, [gl, onError]);
+  return (
+    <OrbitControls
+      key={`${reset}-${isolated}-${isolated ? selected : ''}-${view}`}
+      target={target}
+      makeDefault
+      enablePan={false}
+      minDistance={isolated ? 0.8 : 4}
+      maxDistance={28}
+      minPolarAngle={isolated ? 0.001 : 0.18}
+      maxPolarAngle={isolated ? Math.PI - 0.001 : Math.PI / 2.1}
+      enableDamping={!reduced}
+      dampingFactor={0.09}
+    />
+  );
+}
+
+/** Returning on screen after `frameloop="never"` needs one explicit frame. */
+function Wake({ onscreen }: { onscreen: boolean }) {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    if (onscreen) invalidate();
+  }, [onscreen, invalidate]);
+  return null;
+}
+
+function LoadProgress({ onProgress }: { onProgress: (value: number) => void }) {
+  const { progress } = useProgress();
+  useEffect(() => {
+    onProgress(progress);
+  }, [progress, onProgress]);
+  return null;
+}
+
+export default function AtlasScene(props: Props) {
+  const [inspection, setInspection] = useState({ part: props.selected, view: 'orbit' });
+  const view = inspection.part === props.selected ? inspection.view : 'orbit';
+  return (
+    <>
+      {props.isolated && (
+        <div className="inspection-views" aria-label="Ujęcie części">
+          {(
+            [
+              ['orbit', 'Perspektywa'],
+              ['front', 'Przód'],
+              ['back', 'Tył'],
+              ['top', 'Góra'],
+              ['bottom', 'Spód'],
+              ['ports', 'Złącza'],
+            ] as const
+          )
+            .filter(
+              ([id]) => id !== 'ports' || ['board', 'gpu', 'psu'].includes(props.selected ?? ''),
+            )
+            .map(([id, label]) => (
+              <button
+                key={id}
+                aria-pressed={view === id}
+                onClick={() => setInspection({ part: props.selected, view: id })}
+              >
+                {label}
+              </button>
+            ))}
+        </div>
+      )}
+      <LoadProgress onProgress={props.onProgress} />
+      <Canvas
+        shadows={{ enabled: !props.low, type: PCFShadowMap }}
+        dpr={props.low ? 1 : [1, 1.5]}
+        frameloop={props.onscreen ? 'demand' : 'never'}
+        camera={{ position: [10, 11, 13], fov: 37, near: 0.1, far: 90 }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
+        onCreated={({ gl }) => {
+          gl.setClearColor('#0b0d0c', 0);
+          gl.shadowMap.autoUpdate = false;
+          gl.shadowMap.needsUpdate = true;
+        }}
+        onPointerMissed={() => props.hovered && props.onHover(null)}
+      >
+        <ambientLight intensity={props.isolated ? 0.26 : 0.14} />
+        <directionalLight
+          position={[4, 10, 5]}
+          intensity={props.isolated ? 2.1 : 2.2}
+          color={props.isolated ? '#ffffff' : '#fff5eb'}
+          castShadow={!props.low}
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-9}
+          shadow-camera-right={9}
+          shadow-camera-top={9}
+          shadow-camera-bottom={-9}
+          shadow-normalBias={0.012}
+          shadow-radius={2}
+          shadow-bias={-0.00015}
+        />
+        <directionalLight
+          position={[-7, 5, -6]}
+          intensity={props.isolated ? 1.2 : 1.0}
+          color={props.isolated ? '#e8f0ff' : '#b3d4cf'}
+        />
+        <directionalLight position={[8, 2, -4]} intensity={0.45} color="#ffe2c8" />
+        <directionalLight position={[0, 1, 9]} intensity={1.1} color="#e6eef5" />
+        {props.isolated && (
+          <directionalLight position={[0, -5, 2]} intensity={1.4} color="#f1f4ff" />
+        )}
+        <Suspense fallback={null}>
+          <Environment files={ENV_URL} environmentIntensity={props.isolated ? 0.16 : 0.14} />
+          <Model {...props} />
+          <FlexibleHarness {...props} />
+          <Flow {...props} />
+          <Labels {...props} />
+          {!props.isolated && <Airflow {...props} />}
+          {!props.isolated &&
+            props.mode === 'anatomy' &&
+            props.spread > 0.1 &&
+            (['gpu', 'ram', 'cpu', 'cooler', 'ssd'] as const).map((id) => (
+              <Line
+                key={id}
+                points={[position(id, 0), position(id, props.spread)]}
+                color="#7c8a83"
+                transparent
+                opacity={0.45}
+                dashed
+                dashSize={0.07}
+                gapSize={0.07}
+                lineWidth={1}
+              />
+            ))}
+        </Suspense>
+        <mesh
+          visible={!props.isolated}
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, -0.67, 0]}
+          receiveShadow
+        >
+          <planeGeometry args={[200, 200]} />
+          <shadowMaterial opacity={0.5} />
+        </mesh>
+        {!props.isolated && (
+          <Grid
+            position={[0, -0.68, 0]}
+            args={[40, 40]}
+            cellSize={0.5}
+            cellThickness={0.6}
+            cellColor="#1f2724"
+            sectionSize={2.5}
+            sectionThickness={1}
+            sectionColor="#34413b"
+            fadeDistance={34}
+            fadeStrength={1.6}
+            infiniteGrid
+          />
+        )}
+        <Wake onscreen={props.onscreen} />
+        <CameraRig {...props} view={view} />
+        <PerformanceGuard onSlow={props.onSlow} low={props.low} active={isAnimating(props)} />
+      </Canvas>
+    </>
+  );
+}
+
+useGLTF.preload(MODEL_URL, false, true);

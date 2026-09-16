@@ -1,0 +1,30 @@
+# Zależności i build
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+.vite/
+.eslintcache
+.cache/
+
+# Artefakty potoku modelu (odtwarzalne przez npm run model:build)
+art/export/
+art/*.blend
+*.blend1
+*.log
+
+# Zmienne środowiskowe i sekrety
+.env
+.env.*
+!.env.example
+
+# Edytory, system, lokalne narzędzia
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.sw?
