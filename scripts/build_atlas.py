@@ -306,13 +306,11 @@ for count,cy,pitch in [(12,-.50,.055),(4,1.15,.07)]:
             box('PSU socket chamber',(-2.836,cy+(i-(count-1)/2)*pitch,z),(.008,.038,.058),sleeve,.003)
 # Two separate sleeved harnesses. Their hosts do not move in exploded view.
 # Each has its own plugs, latch, strain relief and combs. PSU/MB use no false printed plugs.
-part='wiring'
+# Separate harness roots let the assembly mode connect each plug on its own.
+part='wiringAtx'
 box('ATX PSU plug',(-2.78,-.50,.82),(.24,.70,.27),nylon,.018)
-box('EPS PSU plug',(-2.78,1.15,.82),(.24,.34,.24),nylon,.018)
 box('ATX board plug',(2.27,.65,.48),(.25,1.04,.26),nylon,.018)
 box('ATX locking tab',(2.42,.65,.43),(.065,.24,.16),black,.008)
-box('EPS board plug',(-.95,2.83,.39),(.49,.25,.18),nylon,.015)
-box('EPS locking tab',(-.95,2.66,.35),(.16,.055,.11),black,.008)
 for i in range(12):
     d=(i-5.5)*.045
     for layer in [-1,1]:
@@ -321,6 +319,11 @@ for i in range(12):
             (-2.66,-.50+d,.82+dz),(-2.64,-1.5+d,.52+dz),(-2.76,-3.36+d,.16+dz),
             (-1.95,-3.48+d,.06+dz),(.25,-3.48+d,.06+dz),(2.73,-3.34+d,.12+dz),
             (2.86,-1.65+d,.20+dz),(2.83,.65+d,.76+dz),(2.27+dz,.65+d*1.7,.61)],.021,sleeve)
+for x in [-1.40,.1,1.6]:box('ATX cable comb',(x,-3.48,.066),(.075,.58,.11),navy,.018)
+part='wiringEps'
+box('EPS PSU plug',(-2.78,1.15,.82),(.24,.34,.24),nylon,.018)
+box('EPS board plug',(-.95,2.83,.39),(.49,.25,.18),nylon,.015)
+box('EPS locking tab',(-.95,2.66,.35),(.16,.055,.11),black,.008)
 for i in range(4):
     d=(i-1.5)*.06
     for layer in [-1,1]:
@@ -328,8 +331,8 @@ for i in range(4):
         cable('EPS 8 sleeved wire',[
             (-2.66,1.15+d,.82+dz),(-2.56,2.55+d,.63+dz),(-2.30,3.20+d,.46+dz),
             (-1.23,3.25+d,.49+dz),(-.95+d,3.12,.60+dz),(-.95+d,2.83+dz,.48)],.024,sleeve)
-for x in [-1.40,.1,1.6]:box('ATX cable comb',(x,-3.48,.066),(.075,.58,.11),navy,.018)
 box('EPS cable comb',(-1.70,3.22,.475),(.07,.28,.13),navy,.012)
+part='base'
 text('24-PIN',(-.3,-3.81,-.175),.09,white)
 # Deterministic assembly checks run before export; a regression must fail the build.
 assert -2.61+.68/2 < -1.95-.18/2, 'Chipset must clear the second PCIe slot'

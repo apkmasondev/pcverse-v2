@@ -27,6 +27,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parts, steps } from './content';
 import { harnessCurve } from './harness';
 import type { Mode, PartId, Workload } from './content';
+import type { BuildView } from './assembly';
 
 const offsets: Record<string, [number, number, number]> = {
   base: [0, 0, 0],
@@ -83,16 +84,40 @@ interface Props {
   idle: boolean;
   /** The canvas is scrolled out of view: nothing needs to be drawn. */
   onscreen: boolean;
+  /** Assembly channel progress; null in every other channel. */
+  build: BuildView | null;
+}
+
+const ALWAYS_ON_BENCH = new Set(['base', 'board', 'psu']);
+/** Which exported root is visible while the machine is being assembled. */
+function builtRootVisible(name: string, build: BuildView) {
+  if (ALWAYS_ON_BENCH.has(name)) return true;
+  if (name === 'wiringAtx') return build.power.atx;
+  if (name === 'wiringEps') return build.power.eps;
+  if (name === 'wiringPcie' || name === 'gpuWiring') return build.power.pcie;
+  if (name === 'wiringFan') return build.power.fan;
+  return build.installed.includes(name as PartId) || build.pending === name;
 }
 
 /** True while something in the scene animates on its own and needs a continuous frame loop. */
-function isAnimating({ reduced, low, mode, running, selected, isolated, airflow, idle }: Props) {
+function isAnimating({
+  reduced,
+  low,
+  mode,
+  running,
+  selected,
+  isolated,
+  airflow,
+  idle,
+  build,
+}: Props) {
   const visibleFans =
     !isolated || selected === 'gpu' || selected === 'psu' || selected === 'cooler';
   return (
     !reduced &&
     ((!low && !idle && visibleFans && airflow > 0) ||
       mode === 'signal' ||
+      (!!build?.pending && !idle) ||
       running ||
       (selected === 'cooler' && !isolated && airflow > 0))
   );
@@ -116,6 +141,7 @@ function Model(props: Props) {
     mode,
     isolated,
     onReady,
+    build,
   } = props;
   const { scene } = useGLTF(MODEL_URL, false, true);
   const { invalidate } = useThree();
@@ -186,34 +212,49 @@ function Model(props: Props) {
 
   useEffect(() => {
     model.children.forEach((o) => {
-      o.visible = !isolated || o.name === selected;
+      o.visible = build ? builtRootVisible(o.name, build) : !isolated || o.name === selected;
     });
     moving.current = true;
     invalidate();
-  }, [spread, selected, isolated, model, invalidate, props.low]);
+  }, [spread, selected, isolated, model, invalidate, props.low, build]);
 
   useEffect(() => {
     materials.forEach((list, id) => {
-      const glow =
-        mode !== 'anatomy' || isolated ? 0 : hovered === id ? 0.085 : selected === id ? 0.03 : 0;
+      const glow = build
+        ? id === build.pending && hovered === id
+          ? 0.03
+          : 0
+        : mode !== 'anatomy' || isolated
+          ? 0
+          : hovered === id
+            ? 0.085
+            : selected === id
+              ? 0.03
+              : 0;
       list.forEach((m) => {
         m.emissive.copy(HOT);
         m.emissiveIntensity = glow;
       });
     });
     invalidate();
-  }, [materials, hovered, selected, mode, isolated, invalidate]);
+  }, [materials, hovered, selected, mode, isolated, invalidate, build]);
 
   useFrame(({ gl, clock }, delta) => {
     stats.current.frames++;
     let settling = false;
     const alpha = reduced ? 1 : 1 - Math.exp(-Math.min(delta, 0.05) * 7);
+    // A part waiting to be mounted hovers above its socket; mounted parts sit in place.
+    const hover = build?.pending && !reduced ? Math.sin(clock.elapsedTime * 2.2) * 0.06 : 0;
     model.children.forEach((o) => {
       const offset = offsets[o.name];
       if (!offset) return;
-      const tx = offset[0] * spread,
-        ty = offset[1] * spread,
-        tz = offset[2] * spread;
+      const waiting =
+        !!build &&
+        (o.name === build.pending || (o.name === 'gpuWiring' && build.pending === 'gpu'));
+      const amount = build ? (waiting ? 1.15 : 0) : spread;
+      const tx = offset[0] * amount,
+        ty = offset[1] * amount + (waiting ? hover : 0),
+        tz = offset[2] * amount;
       o.position.set(
         MathUtils.lerp(o.position.x, tx, alpha),
         MathUtils.lerp(o.position.y, ty, alpha),
@@ -226,6 +267,8 @@ function Model(props: Props) {
       )
         settling = true;
     });
+    // The waiting part bobs gently; it needs continuous frames but no colour tint.
+    if (build?.pending && !reduced && !props.idle) invalidate();
     if (settling || moving.current) {
       // Shadow maps are cached (see onCreated) and refreshed only while geometry moves.
       gl.shadowMap.needsUpdate = true;
@@ -261,14 +304,18 @@ function Model(props: Props) {
       }
     }
   });
-  const interactive = mode === 'anatomy';
+  const interactive = mode === 'anatomy' || !!build?.pending;
+  const target = (object: Object3D) => {
+    const id = partOf(object);
+    return build && id !== build.pending ? null : id;
+  };
   return (
     <primitive
       object={model}
       dispose={null}
       onClick={(event: ThreeEvent<MouseEvent>) => {
         if (event.delta > 4 || !interactive) return;
-        const id = partOf(event.object);
+        const id = target(event.object);
         if (id) {
           event.stopPropagation();
           onSelect(id);
@@ -277,7 +324,7 @@ function Model(props: Props) {
       onPointerOver={(event: ThreeEvent<PointerEvent>) => {
         if (!interactive || event.pointerType === 'touch') return;
         event.stopPropagation();
-        const id = partOf(event.object);
+        const id = target(event.object);
         if (id !== hovered) onHover(id);
       }}
       onPointerOut={(event: ThreeEvent<PointerEvent>) => {
@@ -291,7 +338,7 @@ function Model(props: Props) {
 
 /** Flexible harnesses track the same eased displacement as the exported assemblies.
  * Their PSU/board ends stay fixed; extra slack clears the board and GPU shroud. */
-function FlexibleHarness({ spread, reduced, isolated, low }: Props) {
+function FlexibleHarness({ spread, reduced, isolated, low, build }: Props) {
   const { invalidate } = useThree();
   const current = useRef(0);
   const dirty = useRef(true);
@@ -302,26 +349,32 @@ function FlexibleHarness({ spread, reduced, isolated, low }: Props) {
       roughness: 0.88,
       metalness: 0.02,
     });
-    const mesh = new Mesh(new BufferGeometry(), material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
+    // GPU power cables and the CPU fan lead are separate meshes so they can be connected one by one.
+    for (let i = 0; i < 2; i++) {
+      const mesh = new Mesh(new BufferGeometry(), material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
     return { group, material };
   }, []);
   const rebuild = (amount: number) => {
-    const geometries: TubeGeometry[] = [];
-    for (let index = 0; index < 20; index++) {
-      const gpu = index < 16;
-      const curve = harnessCurve(index, amount);
-      geometries.push(
-        new TubeGeometry(curve, low ? 28 : 48, gpu ? 0.021 : 0.009, low ? 5 : 6, false),
-      );
-    }
-    const mesh = harness.group.children[0] as Mesh;
-    mesh.geometry.dispose();
-    // eslint-disable-next-line react-hooks/immutability -- Imperative Three.js geometry, updated only from effects/useFrame.
-    mesh.geometry = mergeGeometries(geometries)!;
-    geometries.forEach((geometry) => geometry.dispose());
+    [
+      [0, 16],
+      [16, 20],
+    ].forEach(([from, to], slot) => {
+      const geometries: TubeGeometry[] = [];
+      for (let index = from; index < to; index++) {
+        const curve = harnessCurve(index, amount);
+        geometries.push(
+          new TubeGeometry(curve, low ? 28 : 48, index < 16 ? 0.021 : 0.009, low ? 5 : 6, false),
+        );
+      }
+      const mesh = harness.group.children[slot] as Mesh;
+      mesh.geometry.dispose();
+      mesh.geometry = mergeGeometries(geometries)!;
+      geometries.forEach((geometry) => geometry.dispose());
+    });
   };
   const rebuildRef = useRef(rebuild);
   useLayoutEffect(() => {
@@ -331,10 +384,17 @@ function FlexibleHarness({ spread, reduced, isolated, low }: Props) {
     rebuildRef.current(current.current);
     dirty.current = true;
     invalidate();
-  }, [low, isolated, invalidate]);
+  }, [low, isolated, build, invalidate]);
   useEffect(() => {
     invalidate();
   }, [spread, reduced, invalidate]);
+  useEffect(() => {
+    harness.group.children.forEach((mesh, slot) => {
+      mesh.visible = !build || (slot === 0 ? build.power.pcie : build.power.fan);
+    });
+    dirty.current = true;
+    invalidate();
+  }, [harness, build, invalidate]);
   useEffect(
     () => () => {
       harness.group.children.forEach((o) => (o as Mesh).geometry.dispose());
@@ -486,19 +546,33 @@ function PerformanceGuard({
   return null;
 }
 
-function Labels({ selected, hovered, onSelect, onHover, spread, mode, step, isolated }: Props) {
+function Labels({
+  selected,
+  hovered,
+  onSelect,
+  onHover,
+  spread,
+  mode,
+  step,
+  isolated,
+  build,
+}: Props) {
   if (isolated) return null;
   const shown: PartId[] =
     mode === 'signal'
       ? step === 3
         ? ['psu', 'board', 'cpu', 'cooler']
         : [steps[step].from, steps[step].to]
-      : mode === 'lab'
-        ? []
-        : [
-            ...(selected ? [selected] : (['psu', 'gpu', 'ram'] as const)),
-            ...(hovered ? [hovered] : []),
-          ];
+      : build
+        ? build.pending
+          ? [build.pending]
+          : []
+        : mode === 'lab'
+          ? []
+          : [
+              ...(selected ? [selected] : (['psu', 'gpu', 'ram'] as const)),
+              ...(hovered ? [hovered] : []),
+            ];
   return (
     <>
       {parts
@@ -513,10 +587,10 @@ function Labels({ selected, hovered, onSelect, onHover, spread, mode, step, isol
             <button
               className={`part-pin ${selected === p.id ? 'active' : ''} ${hovered === p.id ? 'hover' : ''}`}
               onClick={() => onSelect(p.id)}
-              onPointerEnter={() => mode === 'anatomy' && onHover(p.id)}
-              onPointerLeave={() => mode === 'anatomy' && onHover(null)}
+              onPointerEnter={() => (mode === 'anatomy' || !!build) && onHover(p.id)}
+              onPointerLeave={() => (mode === 'anatomy' || !!build) && onHover(null)}
               aria-label={`Poznaj: ${p.name}`}
-              disabled={mode !== 'anatomy'}
+              disabled={mode !== 'anatomy' && p.id !== build?.pending}
               tabIndex={-1}
             >
               <span>{p.ref}</span>
@@ -557,12 +631,19 @@ function CameraRig({
   spread,
   insets,
   reduced,
+  mode,
   view,
-}: Pick<Props, 'reset' | 'onError' | 'isolated' | 'selected' | 'spread' | 'insets' | 'reduced'> & {
+}: Pick<
+  Props,
+  'reset' | 'onError' | 'isolated' | 'selected' | 'spread' | 'insets' | 'reduced' | 'mode'
+> & {
   view: string;
 }) {
   const { camera, gl, invalidate, size } = useThree();
   const focusPart = isolated ? selected : null;
+  // Assembly happens on the board, so that channel frames the bench a little closer.
+  const building = mode === 'build';
+  const closeness = building && !focusPart ? 0.8 : 1;
   const focusSpread = isolated ? spread : 0;
   const target = useMemo(
     () =>
@@ -570,8 +651,10 @@ function CameraRig({
         ? new Vector3(...centers[focusPart]).add(
             new Vector3(...offsets[focusPart]).multiplyScalar(focusSpread),
           )
-        : new Vector3(-0.5, 1.1, 0),
-    [focusPart, focusSpread],
+        : building
+          ? new Vector3(-0.7, 0.8, 0)
+          : new Vector3(-0.5, 1.1, 0),
+    [focusPart, focusSpread, building],
   );
   const frame = useRef({ size, insets });
   useLayoutEffect(() => {
@@ -592,7 +675,9 @@ function CameraRig({
   useEffect(() => () => (camera as PerspectiveCamera).clearViewOffset(), [camera]);
 
   useEffect(() => {
-    const offset = framing(focusPart, frame.current.size, frame.current.insets);
+    const offset = framing(focusPart, frame.current.size, frame.current.insets).multiplyScalar(
+      closeness,
+    );
     if (focusPart && view !== 'orbit') {
       const distance = offset.length() * (view === 'top' || view === 'bottom' ? 1.2 : 1);
       offset
@@ -618,7 +703,7 @@ function CameraRig({
     camera.position.copy(target).add(offset);
     camera.lookAt(target);
     invalidate();
-  }, [reset, camera, invalidate, focusPart, target, view]);
+  }, [reset, camera, invalidate, focusPart, target, view, closeness]);
 
   // When a side panel appears or changes width, keep the user's viewing angle and only adjust
   // the distance, so the exhibit still fits the space left between the panels.
@@ -628,10 +713,11 @@ function CameraRig({
       fitted.current = true;
       return;
     }
-    const distance = framing(focusPart, frame.current.size, {
-      left: insets.left,
-      right: insets.right,
-    }).length();
+    const distance =
+      framing(focusPart, frame.current.size, {
+        left: insets.left,
+        right: insets.right,
+      }).length() * closeness;
     const direction = camera.position.clone().sub(target).normalize();
     camera.position.copy(target).add(direction.multiplyScalar(distance));
     invalidate();
@@ -754,6 +840,12 @@ export default function AtlasScene(props: Props) {
           <Model {...props} />
           <FlexibleHarness {...props} />
           <Flow {...props} />
+          {props.build?.paste && (
+            <mesh position={[0, 0.408, -1.1]}>
+              <cylinderGeometry args={[0.2, 0.22, 0.008, 40]} />
+              <meshStandardMaterial color="#9aa19e" roughness={0.5} metalness={0.25} />
+            </mesh>
+          )}
           <Labels {...props} />
           {!props.isolated && <Airflow {...props} />}
           {!props.isolated &&

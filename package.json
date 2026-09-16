@@ -12,7 +12,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test scripts/simulation.test.mjs scripts/model.test.mjs scripts/harness.test.mjs",
+    "test": "node --test scripts/simulation.test.mjs scripts/assembly.test.mjs scripts/model.test.mjs scripts/harness.test.mjs",
     "format": "prettier --write src scripts/*.mjs vite.config.ts index.html",
     "model:build": "blender --background --factory-startup --python scripts/build_atlas.py && npm run model:optimize",
     "model:optimize": "node scripts/optimize_model.mjs"

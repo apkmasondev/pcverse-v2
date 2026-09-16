@@ -47,7 +47,10 @@ test('all selectable assemblies and fixed wiring survive export', () => {
     'ram',
     'ssd',
     'psu',
-    'wiring',
+    'wiringAtx',
+    'wiringEps',
+    'wiringPcie',
+    'wiringFan',
   ]) {
     assert.ok(
       roots.some((n) => n.getName() === name),
@@ -63,9 +66,11 @@ test('GPU plugs are a separate assembly with finished latches and strain relief'
 });
 
 test('exported ATX/EPS wires clear the motherboard front edge and USB/front-panel headers', () => {
-  const vertices = worldVertices(
-    roots.find((n) => n.getName() === 'wiring'),
-    'Woven cable sheath',
+  const vertices = ['wiringAtx', 'wiringEps'].flatMap((name) =>
+    worldVertices(
+      roots.find((n) => n.getName() === name),
+      'Woven cable sheath',
+    ),
   );
   assert.ok(vertices.length > 100, 'read actual exported sleeve geometry');
   for (const p of vertices) {

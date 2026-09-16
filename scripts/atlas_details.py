@@ -190,8 +190,9 @@ for y in [-.85,-.65,-.45,-.25,-.05]:
 for y in [-.98,1.68]:
     for z in [-.03,1.47]:
         o=cyl('PSU rear mounting screw',(PSU_BACK-.012,y,z),.045,.025,silver,16);o.rotation_euler.y=math.pi/2
-part='wiring'
+part='wiringPcie'
 for y in [.03,.44]:box('PCIe PSU cable plug',(-2.77,y,.40),(.23,.29,.23),nylon,.015)
+part='wiringFan'
 box('CPU fan cable plug',(.72,2.43,.28),(.34,.16,.17),nylon,.012)
 
 # PBR non-colour maps must remain lossless in glTF; export AUTO preserves PNG.

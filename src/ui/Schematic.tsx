@@ -1,5 +1,6 @@
 import { parts } from '../atlas/content';
 import type { Mode, PartId, Workload } from '../atlas/content';
+import type { BuildView } from '../atlas/assembly';
 import PartGlyph from './PartGlyph';
 
 const W = 960,
@@ -37,6 +38,7 @@ interface Props {
   step: number;
   running: boolean;
   workload: Workload;
+  build: BuildView | null;
 }
 
 export default function Schematic({
@@ -48,20 +50,26 @@ export default function Schematic({
   step,
   running,
   workload,
+  build,
 }: Props) {
   const lit = new Set<Trace>(
-    mode === 'signal'
-      ? stepTraces[step]
-      : mode === 'lab'
-        ? running
-          ? [
-              workload === 'game' ? 'cpu-gpu' : workload === 'render' ? 'ram-cpu' : 'ssd-ram',
-              'cpu-cooler',
-            ]
-          : []
-        : (Object.keys(traces) as Trace[]).filter((t) =>
-            traces[t].ends.some((e) => e === (hovered ?? selected)),
-          ),
+    build
+      ? [
+          ...(build.power.atx ? (['psu-board'] as const) : []),
+          ...(build.paste && build.installed.includes('cooler') ? (['cpu-cooler'] as const) : []),
+        ]
+      : mode === 'signal'
+        ? stepTraces[step]
+        : mode === 'lab'
+          ? running
+            ? [
+                workload === 'game' ? 'cpu-gpu' : workload === 'render' ? 'ram-cpu' : 'ssd-ram',
+                'cpu-cooler',
+              ]
+            : []
+          : (Object.keys(traces) as Trace[]).filter((t) =>
+              traces[t].ends.some((e) => e === (hovered ?? selected)),
+            ),
   );
   const litParts = new Set<PartId>([...lit].flatMap((t) => traces[t].ends));
   return (
@@ -106,7 +114,7 @@ export default function Schematic({
             return (
               <button
                 key={p.id}
-                className={`sch-part sch-${p.id} ${selected === p.id ? 'selected' : ''} ${hovered === p.id ? 'hover' : ''} ${mode !== 'anatomy' && litParts.has(p.id) ? 'lit' : ''}`}
+                className={`sch-part sch-${p.id} ${selected === p.id ? 'selected' : ''} ${hovered === p.id ? 'hover' : ''} ${build ? (build.pending === p.id ? 'lit' : build.installed.includes(p.id) || p.id === 'psu' ? '' : 'dim') : mode !== 'anatomy' && litParts.has(p.id) ? 'lit' : ''}`}
                 style={{
                   left: `${(x / W) * 100}%`,
                   top: `${(y / H) * 100}%`,

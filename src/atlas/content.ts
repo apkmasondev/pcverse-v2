@@ -1,5 +1,5 @@
 export type PartId = 'cpu' | 'gpu' | 'ram' | 'board' | 'ssd' | 'psu' | 'cooler';
-export type Mode = 'anatomy' | 'signal' | 'lab';
+export type Mode = 'anatomy' | 'signal' | 'lab' | 'build';
 export const parts: {
   id: PartId;
   name: string;

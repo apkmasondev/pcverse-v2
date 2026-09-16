@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 const shortcuts: [string[], string][] = [
-  [['A', 'D', 'L'], 'Anatomia · Droga danych · Laboratorium'],
+  [['A', 'D', 'L', 'M'], 'Anatomia · Droga danych · Laboratorium · Montaż'],
   [['1', '–', '7'], 'Wybór podzespołu'],
   [['←', '→'], 'Poprzednia / następna część lub etap'],
   [['E'], 'Rozłóż lub złóż komputer'],
@@ -67,6 +67,11 @@ export default function HelpDialog({ onClose }: { onClose: () => void }) {
               <b>03 Laboratorium.</b> Uruchom zadanie, zmieniaj rozdzielczość, RAM i przepływ
               powietrza. Dziennik zapisuje kolejne konfiguracje do porównania. Wynik to uproszczony
               stan po ustabilizowaniu temperatury, nie pomiar sprzętu.
+            </p>
+            <p>
+              <b>04 Montaż.</b> Złóż komputer krok po kroku: procesor, pasta, chłodzenie, pamięć,
+              dysk, karta i przewody zasilające. Błędy wyjdą przy pierwszym uruchomieniu, tak jak w
+              prawdziwym serwisie.
             </p>
             <aside className="note">
               <span>DOSTĘPNOŚĆ</span>

@@ -1,4 +1,13 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useEffectEvent, useState } from 'react';
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+} from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   Box,
@@ -22,6 +31,10 @@ import AnatomyPanel from './ui/AnatomyPanel';
 import SignalPanel from './ui/SignalPanel';
 import LabPanel from './ui/LabPanel';
 import Telemetry from './ui/Telemetry';
+import BuildPanel from './ui/BuildPanel';
+import BuildChecklist from './ui/BuildChecklist';
+import { buildSteps, initialBuild, installedParts, pendingPart } from './atlas/assembly';
+import type { BuildState, BuildView } from './atlas/assembly';
 import type { Measurement } from './ui/Telemetry';
 import Schematic from './ui/Schematic';
 import PartGlyph from './ui/PartGlyph';
@@ -49,6 +62,7 @@ const channels = [
   { id: 'anatomy', name: 'Anatomia', key: 'A' },
   { id: 'signal', name: 'Droga danych', key: 'D' },
   { id: 'lab', name: 'Laboratorium', key: 'L' },
+  { id: 'build', name: 'Montaż', key: 'M' },
 ] as const;
 const BOOT_KEY = 'pcverse-booted';
 const IDLE_AFTER_MS = 45_000;
@@ -101,6 +115,7 @@ export default function App() {
   const [sceneReady, setSceneReady] = useState(false);
   const [booting, setBooting] = useState(() => !readBootFlag());
   const [toast, setToast] = useState(false);
+  const [build, setBuild] = useState<BuildState>(initialBuild);
   const [idle, setIdle] = useState(false);
   const [sceneNode, setSceneNode] = useState<HTMLDivElement | null>(null);
   const [onscreen, setOnscreen] = useState(true);
@@ -113,7 +128,7 @@ export default function App() {
   const insets = desktop
     ? {
         left: leftWidth ? leftWidth + 20 : 0,
-        right: mode === 'lab' && rightWidth ? rightWidth + 20 : 0,
+        right: (mode === 'lab' || mode === 'build') && rightWidth ? rightWidth + 20 : 0,
       }
     : { left: 0, right: 0 };
 
@@ -149,7 +164,7 @@ export default function App() {
         setSpread(0.7);
         setStep(0);
       }
-      if (next === 'lab') setSpread(0);
+      if (next === 'lab' || next === 'build') setSpread(0);
       revealPanel();
     },
     [revealPanel],
@@ -162,6 +177,29 @@ export default function App() {
       revealPanel();
     },
     [mode, switchMode, select, revealPanel],
+  );
+
+  // In the assembly channel, clicking the glowing part performs the current mounting step.
+  const pick = useCallback(
+    (id: PartId) => {
+      if (mode !== 'build') return inspect(id);
+      const current = buildSteps[build.step];
+      if (pendingPart(build) === id && current.action && !current.options)
+        setBuild({ ...build, step: build.step + 1 });
+    },
+    [mode, inspect, build],
+  );
+  const buildView = useMemo<BuildView | null>(
+    () =>
+      mode === 'build'
+        ? {
+            installed: installedParts(build),
+            pending: pendingPart(build),
+            paste: build.paste,
+            power: build.power,
+          }
+        : null,
+    [mode, build],
   );
 
   const fallback = useCallback(() => setFlat(true), []);
@@ -275,12 +313,15 @@ export default function App() {
         return switchMode('signal');
       case 'l':
         return switchMode('lab');
+      case 'm':
+        return switchMode('build');
       case '?':
         return setHelp(true);
       case 'r':
         return !flat && setReset((n) => n + 1);
       case 'e':
-        if (mode !== 'lab' && !flat && !isolated) setSpread((v) => (v > 0.5 ? 0 : 1));
+        if (mode !== 'lab' && mode !== 'build' && !flat && !isolated)
+          setSpread((v) => (v > 0.5 ? 0 : 1));
         return;
       case 'f':
         if (mode === 'anatomy' && selected && !flat) setIsolated((v) => !v);
@@ -313,22 +354,26 @@ export default function App() {
 
   const view = flat
     ? 'SCHEMAT 2D'
-    : isolated && selected
-      ? 'SZCZEGÓŁOWY'
-      : spread > 0.1
-        ? 'ROZŁOŻONY'
-        : 'ZŁOŻONY';
-  const figure = mode === 'anatomy' ? '01' : mode === 'signal' ? '02' : '03';
+    : mode === 'build'
+      ? 'MONTAŻOWY'
+      : isolated && selected
+        ? 'SZCZEGÓŁOWY'
+        : spread > 0.1
+          ? 'ROZŁOŻONY'
+          : 'ZŁOŻONY';
+  const figure =
+    mode === 'anatomy' ? '01' : mode === 'signal' ? '02' : mode === 'lab' ? '03' : '04';
   const schematic = (
     <Schematic
       selected={selected}
       hovered={hovered}
-      onSelect={inspect}
+      onSelect={pick}
       onHover={setHovered}
       mode={mode}
       step={step}
       running={running}
       workload={workload}
+      build={buildView}
     />
   );
 
@@ -392,7 +437,7 @@ export default function App() {
         }
       >
         <div
-          className={`scene-layer ${hovered && mode === 'anatomy' && !flat ? 'pointing' : ''}`}
+          className={`scene-layer ${hovered && (mode === 'anatomy' || hovered === buildView?.pending) && !flat ? 'pointing' : ''}`}
           ref={setSceneNode}
           role="region"
           aria-label="Interaktywny eksponat komputera"
@@ -406,7 +451,7 @@ export default function App() {
                   isolated={isolated && mode === 'anatomy' && !!selected}
                   selected={selected}
                   hovered={hovered}
-                  onSelect={inspect}
+                  onSelect={pick}
                   onHover={setHovered}
                   spread={spread}
                   mode={mode}
@@ -426,6 +471,7 @@ export default function App() {
                   onSlow={onSlow}
                   idle={idle}
                   onscreen={onscreen}
+                  build={buildView}
                 />
               </Suspense>
             </SceneBoundary>
@@ -486,8 +532,22 @@ export default function App() {
               onReset={resetExperiment}
             />
           )}
+          {mode === 'build' && (
+            <BuildPanel
+              state={build}
+              reduced={motionOff}
+              onChange={setBuild}
+              onReset={() => setBuild(initialBuild)}
+              onLab={() => switchMode('lab')}
+            />
+          )}
         </section>
 
+        {mode === 'build' && (
+          <aside className="dock dock-right" ref={rightDock} aria-label="Lista kontrolna montażu">
+            <BuildChecklist state={build} />
+          </aside>
+        )}
         {mode === 'lab' && (
           <aside className="dock dock-right" ref={rightDock} aria-label="Wyniki symulacji">
             <Telemetry
@@ -502,7 +562,7 @@ export default function App() {
         )}
 
         <div className="stage-tools">
-          {mode !== 'lab' && !flat && !(isolated && selected) && (
+          {mode !== 'lab' && mode !== 'build' && !flat && !(isolated && selected) && (
             <div className="assembly">
               <button
                 className="tool"
