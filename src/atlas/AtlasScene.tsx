@@ -700,17 +700,18 @@ function DiagnosticLeds({ build, mode, running, reduced, isolated, selected, idl
           </group>
         );
       })}
-      {[1.72, 2.1].map((z, i) => (
+      {/* Link and activity lights sit in the top corners of the RJ45 opening, beside the contacts. */}
+      {[1.752, 2.068].map((z, i) => (
         <group key={z}>
-          <mesh position={[2.47, 0.66, z]} material={resources.lamps[5 + i]}>
-            <boxGeometry args={[0.014, 0.03, 0.06]} />
+          <mesh position={[2.45, 0.45, z]} material={resources.lamps[5 + i]}>
+            <boxGeometry args={[0.012, 0.034, 0.05]} />
           </mesh>
           <mesh
-            position={[2.49, 0.66, z]}
+            position={[2.456, 0.45, z]}
             rotation={[0, Math.PI / 2, 0]}
             material={resources.halos[5 + i]}
           >
-            <planeGeometry args={[0.2, 0.2]} />
+            <planeGeometry args={[0.13, 0.13]} />
           </mesh>
         </group>
       ))}
@@ -1109,7 +1110,7 @@ function CameraRig({
       offset
         .copy(
           view === 'top'
-            ? new Vector3(0, 1, 0.001)
+            ? new Vector3(0, 1, -0.001)
             : view === 'bottom'
               ? new Vector3(0, -1, 0.001)
               : view === 'back'

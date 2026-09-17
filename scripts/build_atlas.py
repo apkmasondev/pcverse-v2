@@ -23,7 +23,6 @@ contact=material('Socket gold alloy',(.52,.35,.12),.75,.4)
 orange=material('Safety orange',(.95,.20,.035),.25)
 gold=material('Copper contacts',(.65,.37,.11),.75)
 white=material('Porcelain',(.79,.80,.74),.25)
-trace=material('Etched traces',(.14,.28,.24),.65)
 groups={}
 part='board'
 def keep(o,mat):
@@ -70,8 +69,15 @@ def ring(name,center,r,thickness,mat,front=False):
     for p in o.data.polygons:p.use_smooth=True
     return keep(o,mat)
 
-def drill(o,center,r,depth,axis='Y'):
-    bpy.ops.mesh.primitive_cylinder_add(vertices=64,radius=r,depth=depth,location=center)
+def cut(o,center,size):
+    bpy.ops.mesh.primitive_cube_add(size=1,location=center);cutter=bpy.context.object
+    cutter.dimensions=size;bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+    mod=o.modifiers.new('Panel opening','BOOLEAN');mod.operation='DIFFERENCE';mod.object=cutter
+    bpy.context.view_layer.objects.active=o;bpy.ops.object.modifier_apply(modifier=mod.name)
+    bpy.data.objects.remove(cutter,do_unlink=True)
+
+def drill(o,center,r,depth,axis='Y',sides=64):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=sides,radius=r,depth=depth,location=center)
     cutter=bpy.context.object
     if axis=='Y':cutter.rotation_euler.x=math.pi/2
     elif axis=='X':cutter.rotation_euler.y=math.pi/2
@@ -159,7 +165,8 @@ for x in [-2.2,2.2]:
     for y in [-2.8,0,2.8]:
         cyl('Standoff',(x,y,-.12),.065,.15,gold,12)
         cyl('Screw',(x,y,.085),.08,.025,silver)
-        box('Screw slot',(x,y,.10),(.085,.015,.007),black,0)
+        for angle in [0,math.pi/2]:
+            o=box('Cross recess',(x,y,.101),(.108,.014,.008),black,0);o.rotation_euler.z=angle
 box('AM5 socket',(0,1.1,.17),(1.48,1.65,.19),black)
 box('Socket contact bed',(0,1.1,.245),(1.11,1.11,.045),black,.008)
 # Open retention frame, not a photo containing a second motherboard.
@@ -295,7 +302,10 @@ for a in [math.pi/4,-math.pi/4]:
 for a in [math.pi/4,3*math.pi/4,5*math.pi/4,7*math.pi/4]:
     cyl('Grille mounting boss',(-4.22+1.07*math.cos(a),.35+1.07*math.sin(a),1.636),.035,.035,silver,16)
 for x in [-5.38,-3.06]:
-    for y in [-.99,1.69]:cyl('PSU screw',(x,y,1.63),.045,.03,silver,16)
+    for y in [-.99,1.69]:
+        cyl('PSU screw',(x,y,1.63),.045,.03,silver,16)
+        for angle in [0,math.pi/2]:
+            o=box('Cross recess',(x,y,1.646),(.062,.009,.006),black,0);o.rotation_euler.z=angle
 box('PSU rating',(-4.22,-.93,1.63),(1.4,.27,.025),black)
 text('PCV / 650 W',(-4.72,-.99,1.65),.14,white)
 box('ATX PSU modular socket',(-2.90,-.50,.82),(.12,.77,.31),black,.02)

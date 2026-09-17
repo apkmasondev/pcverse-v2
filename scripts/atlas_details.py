@@ -35,6 +35,9 @@ for mat,kind,strength in [(silver,'brushed',.28),(gold,'brushed',.15),(navy,'pow
 ink=material('Warm white silkscreen',(.52,.58,.55),0,.85)
 chip=material('Moulded silicon packages',(.018,.022,.024),.04,.8)
 blue=material('USB blue insert',(.015,.13,.3),0,.52)
+red=material('USB red insert',(.26,.02,.02),0,.52)
+green=material('Line out jack',(.04,.3,.1),0,.5)
+pink=material('Microphone jack',(.5,.16,.2),0,.5)
 tan=material('Ceramic capacitor body',(.24,.16,.095),0,.78)
 
 def smd(x,y,z=.105,scale=1):
@@ -58,20 +61,33 @@ box('VRM side heat spreader',(-1.63,1.16,.27),(.40,1.64,.32),navy,.025)
 for x in [-1.78,-1.68,-1.58,-1.48]:
     box('VRM side cooling fin',(x,1.16,.51),(.045,1.56,.22),silver,.007)
 # Rear IO metal housings, recessed insulators, individual contacts and latches.
+# USB 3.2 Gen 2: the red insert marks the faster standard at a glance.
+def usb3(y,z):
+    box('USB black recessed opening',(-2.436,y,z),(.014,.36,.17),black,.009)
+    box('USB 10 Gbps tongue',(-2.447,y,z-.027),(.021,.29,.035),red,.004)
+    for i in range(4):box('USB contact',(-2.46,y-.105+i*.07,z-.003),(.008,.022,.015),gold,0)
+
+# The lowest stack keeps plain USB 2.0 ports, as most boards still do.
 for y in [.25,.79,1.33]:
     box('USB stack housing',(-2.15,y,.39),(.56,.45,.58),silver,.018)
     for z in [.25,.51]:
         box('USB black recessed opening',(-2.436,y,z),(.014,.36,.17),black,.009)
-        box('USB 3 tongue',(-2.447,y,z-.027),(.021,.29,.035),blue,.004)
+        box('USB tongue',(-2.447,y,z-.027),(.021,.29,.035),black if y<.4 else blue,.004)
         for i in range(4):box('USB contact',(-2.46,y-.105+i*.07,z-.003),(.008,.022,.015),gold,0)
-box('RJ45 shield',(-2.15,1.91,.42),(.56,.49,.64),silver,.018)
-box('RJ45 cavity',(-2.438,1.91,.44),(.016,.38,.39),black,.008)
-box('RJ45 latch notch',(-2.449,1.91,.21),(.01,.16,.08),black,0)
-for i in range(8):box('RJ45 spring',(-2.452,1.785+i*.035,.55),(.012,.014,.12),gold,.002)
-for y in [1.72,2.1]:box('Link indicator',(-2.457,y,.66),(.012,.055,.027),trace,.003)
-for y in [-.13,-.37]:
+box('RJ45 shield',(-2.15,1.91,.40),(.56,.49,.70),silver,.018)
+box('RJ45 cavity',(-2.438,1.91,.28),(.016,.38,.39),black,.008)
+box('RJ45 latch notch',(-2.449,1.91,.06),(.01,.16,.08),black,0)
+for i in range(8):box('RJ45 spring',(-2.452,1.785+i*.035,.39),(.012,.014,.12),gold,.002)
+# A single USB port shares the network jack's housing, as combo blocks do on real boards.
+usb3(1.91,.60)
+# The last free stretch of the panel carries a second USB 3.2 Gen 2 stack.
+box('USB stack housing',(-2.18,2.45,.39),(.50,.45,.58),silver,.018)
+for z in [.25,.51]:usb3(2.45,z)
+# Colour-coded analogue audio: green line output, pink microphone input.
+for y,insert in [(-.13,green),(-.37,pink)]:
     o=cyl('Audio jack collar',(-2.448,y,.31),.088,.025,silver,24);o.rotation_euler.y=math.pi/2
-    o=cyl('Audio jack bore',(-2.464,y,.31),.057,.008,black,24);o.rotation_euler.y=math.pi/2
+    o=cyl('Audio jack insert',(-2.462,y,.31),.062,.012,insert,24);o.rotation_euler.y=math.pi/2
+    o=cyl('Audio jack bore',(-2.470,y,.31),.038,.01,black,24);o.rotation_euler.y=math.pi/2
     box('Audio jack body',(-2.13,y,.25),(.54,.18,.27),black,.01)
 
 # Capacitors and chokes occupy explicit free regions, never the PCIe keep-outs.
@@ -183,13 +199,18 @@ for y,z in [(1.02,.48),(1.38,.48),(1.2,.65)]:box('IEC earth and mains pin',(PSU_
 box('Power rocker bezel',(PSU_BACK-.033,.55,.52),(.055,.35,.5),black,.025)
 o=box('Power rocker',(PSU_BACK-.071,.55,.52),(.075,.25,.36),nylon,.02);o.rotation_euler.y=-.13
 box('Power on mark',(PSU_BACK-.118,.55,.61),(.003,.016,.07),ink,.001)
-# Real perforated grille built from a shallow panel with repeated openings.
-vent=box('PSU rear ventilation',(PSU_BACK-.023,-.45,.75),(.025,1.1,1.34),silver,.015)
-for y in [-.85,-.65,-.45,-.25,-.05]:
-    for z in [.22,.40,.58,.76,.94,1.12,1.30]:drill(vent,(PSU_BACK-.025,y,z),.059,.10,axis='X')
+# A real window in the enclosure, a recessed honeycomb panel and darkness behind it.
+cut(psu_shell,(PSU_BACK,-.45,.75),(.2,1.04,1.28))
+box('PSU interior',(PSU_BACK+.26,-.45,.75),(.03,1.16,1.4),black,0)
+vent=box('PSU honeycomb grille',(PSU_BACK+.03,-.45,.75),(.026,1.06,1.3),silver,.006)
+for row,z in enumerate([.19,.335,.48,.625,.77,.915,1.06,1.205]):
+    for y in [-.92,-.77,-.62,-.47,-.32,-.17,-.02]:
+        drill(vent,(PSU_BACK+.03,y+(row%2)*.075,z),.058,.12,axis='X',sides=6)
 for y in [-.98,1.68]:
     for z in [-.03,1.47]:
         o=cyl('PSU rear mounting screw',(PSU_BACK-.012,y,z),.045,.025,silver,16);o.rotation_euler.y=math.pi/2
+        for angle in [0,math.pi/2]:
+            o=box('Cross recess',(PSU_BACK-.028,y,z),(.006,.062,.009),black,0);o.rotation_euler.x=angle
 part='wiringPcie'
 for y in [.03,.44]:box('PCIe PSU cable plug',(-2.77,y,.40),(.23,.29,.23),nylon,.015)
 part='wiringFan'
