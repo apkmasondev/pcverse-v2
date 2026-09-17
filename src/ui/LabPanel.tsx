@@ -58,9 +58,7 @@ export default function LabPanel(props: Props) {
       <h1 className="display small">
         Co spowalnia <em>maszynę?</em>
       </h1>
-      <p className="lede">
-        Jedna zmiana, widoczna konsekwencja. Znajdź miejsce, w którym kończy się zapas mocy.
-      </p>
+      <p className="lede">Zmieniaj jedno ustawienie i sprawdź, gdzie kończy się zapas mocy.</p>
 
       <div className="field">
         <span className="field-label">
@@ -133,25 +131,24 @@ export default function LabPanel(props: Props) {
         </div>
       </div>
 
-      <button
-        className="btn ghost wide thermal-toggle"
-        aria-pressed={props.thermal}
-        onClick={props.onThermal}
-      >
-        <Thermometer size={16} />
-        <span>{props.thermal ? 'Wyłącz termowizję' : 'Termowizja'}</span>
-        <kbd>T</kbd>
-      </button>
-
       <div className="lab-actions">
         <button
           className={`btn power ${running ? 'on' : ''}`}
           aria-pressed={running}
+          title="Spacja"
           onClick={props.onRun}
         >
           <Power size={18} />
           <span>{running ? 'Zatrzymaj zadanie' : 'Uruchom zadanie'}</span>
-          <kbd>Spacja</kbd>
+        </button>
+        <button
+          className="icon-button thermal-toggle"
+          aria-label="Termowizja"
+          aria-pressed={props.thermal}
+          title={props.thermal ? 'Wyłącz termowizję (T)' : 'Termowizja (T)'}
+          onClick={props.onThermal}
+        >
+          <Thermometer size={17} />
         </button>
         <button
           className="icon-button"
@@ -162,10 +159,7 @@ export default function LabPanel(props: Props) {
           <RotateCcw size={17} />
         </button>
       </div>
-      <small className="disclaimer">
-        Model edukacyjny, niezależny od oznaczeń na eksponacie. Temperatura pokazuje umowny stan po
-        rozgrzaniu, nie przebieg w czasie. Wartości nie są benchmarkiem sprzętu.
-      </small>
+      <small className="disclaimer">Model poglądowy: wartości umowne, nie benchmark.</small>
     </div>
   );
 }

@@ -1166,6 +1166,77 @@ code {
   display: flex;
   gap: 8px;
 }
+/* The lab has the most controls; keep the whole panel visible without scrolling. */
+.lab-panel {
+  gap: 14px;
+}
+.lab-panel .field {
+  gap: 7px;
+}
+.lab-panel .workloads button {
+  min-height: 46px;
+}
+.lab-panel .segmented button {
+  min-height: 36px;
+}
+.lab-panel .lab-actions .btn.power,
+.lab-panel .lab-actions .icon-button {
+  min-height: 48px;
+  height: 48px;
+}
+.lab-panel .lab-actions .icon-button {
+  width: 48px;
+}
+@media (min-width: 1024px) and (max-height: 880px) {
+  .lab-panel {
+    gap: 11px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  .lab-panel .lede,
+  .lab-panel .fader-scale {
+    display: none;
+  }
+  .lab-panel .panel-tip.accent {
+    margin-top: -2px;
+    font-size: 12px;
+  }
+}
+@media (min-width: 1024px) and (max-height: 960px) {
+  .log tbody tr:nth-child(n + 4) {
+    display: none;
+  }
+}
+@media (min-width: 1024px) and (max-height: 780px) {
+  .log tbody tr:nth-child(n + 3) {
+    display: none;
+  }
+  .telemetry-main {
+    padding: 8px 0;
+  }
+  .lab-panel .display.small {
+    font-size: 26px;
+  }
+  .lab-panel .panel-kicker {
+    display: none;
+  }
+  .lab-panel .workloads button {
+    min-height: 40px;
+  }
+  .lab-panel .workloads small {
+    display: none;
+  }
+  .telemetry {
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .telemetry .score b {
+    font-size: 52px;
+  }
+  .telemetry .diagnosis p {
+    display: none;
+  }
+}
 .btn.power {
   flex: 1;
   justify-content: flex-start;
@@ -1871,7 +1942,7 @@ code {
 .thermal-legend b:last-of-type {
   text-align: right;
 }
-.btn.ghost.thermal-toggle[aria-pressed='true'] {
+.icon-button.thermal-toggle[aria-pressed='true'] {
   border-color: var(--amber);
   color: var(--amber);
   background: rgba(255, 193, 77, 0.08);
@@ -1880,6 +1951,12 @@ code {
   .thermal-legend {
     top: 12px;
     right: 24px;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 740px) {
+  .telemetry .log {
+    display: none;
   }
 }
 
