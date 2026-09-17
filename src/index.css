@@ -2624,6 +2624,17 @@ code {
     display: none;
   }
 }
+/* The help dialog lists keys explicitly; phones have no keyboard, so the table is left out there. */
+@media (hover: none) {
+  .shortcuts kbd {
+    display: inline-grid;
+  }
+}
+@media (hover: none) and (pointer: coarse) {
+  .shortcuts {
+    display: none;
+  }
+}
 
 @media (max-width: 1023px) {
   .app {
