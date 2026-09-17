@@ -2043,6 +2043,10 @@ code {
   white-space: nowrap;
   pointer-events: none;
 }
+.airflow-tag.exhaust {
+  border-color: rgba(255, 193, 77, 0.55);
+  color: var(--amber);
+}
 .airflow-tag.hot {
   border-color: var(--danger);
   color: var(--danger);

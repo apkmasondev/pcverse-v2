@@ -11,6 +11,8 @@ import {
   useProgress,
 } from '@react-three/drei';
 import {
+  CatmullRomCurve3,
+  Quaternion,
   Color,
   BufferGeometry,
   Group,
@@ -119,7 +121,7 @@ function isAnimating({
       mode === 'signal' ||
       (!!build?.pending && !idle) ||
       running ||
-      (selected === 'cooler' && !isolated && airflow > 0))
+      (selected === 'cooler' && airflow > 0))
   );
 }
 
@@ -476,46 +478,112 @@ function Flow({ spread, step, reduced, running, mode, workload }: Props) {
   );
 }
 
-/** Air enters on the -X side and crosses the tower towards the outward-facing rear I/O (+X). */
+// Tower cooler geometry in scene units (see scripts/build_atlas.py): the 120 mm fan sits on
+// the -X face, the fin stack spans x ±0.37 and the airflow leaves towards the rear I/O (+X).
+const TOWER = { fanX: -0.61, finsX: 0.37, fanY: 1.66, z: 1.1, top: 2.5 };
+const INTAKE = new Color('#5fd4c4');
+const WARM = new Color('#ffc14d');
+const HOT_AIR = new Color('#ff4d3d');
+const STREAMS: [number, number][] = [
+  [0, 0],
+  [0.36, -0.3],
+  [0.36, 0.3],
+  [-0.36, -0.3],
+  [-0.36, 0.3],
+];
+
+/** Streamlines drawn as a diagram over the model: cool air converges on the fan, crosses
+ * the fins and leaves warmer towards the rear panel. Dashes move with the fan speed. */
 function Airflow({ spread, airflow, temperature, reduced, running, mode, selected }: Props) {
-  const arrows = useRef<Group>(null);
+  const streams = useRef<Group>(null);
   const active = (mode === 'lab' && running) || (mode === 'anatomy' && selected === 'cooler');
-  const center = position('cooler', spread);
-  const base = center.y - 0.5;
-  useFrame(({ clock, invalidate }) => {
-    if (!active || reduced || !arrows.current || airflow === 0) return;
-    arrows.current.children.forEach((arrow, i) => {
-      const travel = (clock.elapsedTime * airflow * 0.006 + i / 9) % 1;
-      arrow.position.set(
-        center.x - 1.25 + travel * 2.5,
-        base + ((i % 3) - 1) * 0.45,
-        center.z + (((i * 7) % 3) - 1) * 0.42,
-      );
+  const lift = offsets.cooler[1] * spread;
+  const heat = MathUtils.clamp(((mode === 'lab' ? temperature : 55) - 25) / 65, 0, 1);
+  const exhaust = useMemo(
+    () =>
+      INTAKE.clone()
+        .lerp(WARM, Math.min(1, heat * 1.7))
+        .lerp(HOT_AIR, Math.max(0, (heat - 0.6) / 0.4)),
+    [heat],
+  );
+  const lines = useMemo(
+    () =>
+      STREAMS.map(([dy, dz]) => {
+        const y = TOWER.fanY + lift + dy,
+          z = TOWER.z + dz;
+        const curve = new CatmullRomCurve3([
+          new Vector3(-2.1, y + dy * 0.7, z + dz * 0.9),
+          new Vector3(-1.2, y + dy * 0.25, z + dz * 0.3),
+          new Vector3(TOWER.fanX, y, z),
+          new Vector3(0, y, z),
+          new Vector3(TOWER.finsX + 0.05, y, z),
+          new Vector3(1.2, y + 0.08 + dy * 0.2, z + dz * 0.4),
+          // Warm air drifts slightly upwards as it leaves the fins.
+          new Vector3(2.1, y + 0.22 + dy * 0.45, z + dz * 0.9),
+        ]);
+        const points = curve.getPoints(48);
+        const colors = points.map((point) => {
+          const t = MathUtils.smoothstep(point.x, TOWER.fanX, TOWER.finsX + 0.35);
+          return INTAKE.clone().lerp(exhaust, t);
+        });
+        const end = points[points.length - 1];
+        const tangent = curve.getTangent(1);
+        const heading = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), tangent);
+        return { points, colors, end, heading };
+      }),
+    [lift, exhaust],
+  );
+  useFrame(({ invalidate }, delta) => {
+    if (!active || reduced || !streams.current || airflow === 0) return;
+    streams.current.children.forEach((line) => {
+      const material = (line as Mesh).material as unknown as { dashOffset: number };
+      material.dashOffset -= Math.min(delta, 0.05) * (0.25 + airflow * 0.014);
     });
     invalidate();
   });
   if (!active) return null;
-  const hot = temperature >= 90;
+  const hot = temperature >= 90 && mode === 'lab';
+  const still = airflow === 0;
   return (
     <group>
-      <Html position={[center.x, center.y + 0.95, center.z]} center zIndexRange={[4, 0]}>
-        <span className={`airflow-tag ${hot ? 'hot' : ''}`}>
-          →{' '}
-          {mode === 'lab'
-            ? `AIR ${airflow}% · ${temperature}°C`
-            : 'POWIETRZE PRZECHODZI PRZEZ ŻEBRA'}
+      <group ref={streams}>
+        {lines.map(({ points, colors }, i) => (
+          <Line
+            key={i}
+            points={points}
+            vertexColors={colors}
+            lineWidth={i === 0 ? 3 : 2}
+            dashed
+            dashSize={0.16}
+            gapSize={0.1}
+            transparent
+            opacity={still ? 0.28 : i === 0 ? 0.95 : 0.7}
+            depthTest={false}
+          />
+        ))}
+      </group>
+      {lines.map(({ end, heading }, i) => (
+        <mesh key={i} position={end} quaternion={heading} renderOrder={10}>
+          <coneGeometry args={[i === 0 ? 0.07 : 0.05, i === 0 ? 0.2 : 0.15, 12]} />
+          <meshBasicMaterial
+            color={exhaust}
+            toneMapped={false}
+            transparent
+            opacity={still ? 0.3 : 0.95}
+            depthTest={false}
+          />
+        </mesh>
+      ))}
+      <Html position={[-2.15, TOWER.top + lift + 0.05, TOWER.z]} center zIndexRange={[4, 0]}>
+        <span className="airflow-tag">
+          {still ? 'WENTYLATOR STOI' : mode === 'lab' ? `WLOT · ${airflow}%` : 'WLOT · CHŁODNE'}
         </span>
       </Html>
-      {!reduced && airflow > 0 && (
-        <group ref={arrows}>
-          {Array.from({ length: 9 }, (_, i) => (
-            <mesh key={i} rotation={[0, 0, -Math.PI / 2]}>
-              <coneGeometry args={[0.045, 0.17, 5]} />
-              <meshBasicMaterial color={hot ? '#ff5a36' : '#5fd4c4'} toneMapped={false} />
-            </mesh>
-          ))}
-        </group>
-      )}
+      <Html position={[2.15, TOWER.top + lift + 0.3, TOWER.z]} center zIndexRange={[4, 0]}>
+        <span className={`airflow-tag exhaust ${hot ? 'hot' : ''}`}>
+          {mode === 'lab' ? `WYLOT · ${temperature}°C` : 'WYLOT · CIEPŁE'}
+        </span>
+      </Html>
     </group>
   );
 }
@@ -852,7 +920,7 @@ export default function AtlasScene(props: Props) {
             </mesh>
           )}
           <Labels {...props} />
-          {!props.isolated && <Airflow {...props} />}
+          {(!props.isolated || props.selected === 'cooler') && <Airflow {...props} />}
           {!props.isolated &&
             props.mode === 'anatomy' &&
             props.spread > 0.1 &&
