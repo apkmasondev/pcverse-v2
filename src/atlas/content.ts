@@ -22,7 +22,7 @@ export const parts: {
       'Logika gry, obliczenia i instrukcje systemu trafiają do procesora. Jego rdzenie wykonują zadania, korzystając z szybkiej pamięci podręcznej i danych w RAM.',
     fact: 'Więcej rdzeni pomaga wtedy, gdy program potrafi rozdzielić między nie pracę. Samo GHz nie wystarczy do porównania procesorów.',
     spec: 'INSTRUKCJE → WYNIKI',
-    position: [0, 0.5, -1.1],
+    position: [0, 0.5, 1.1],
   },
   {
     id: 'gpu',
@@ -34,7 +34,7 @@ export const parts: {
       'GPU przetwarza wiele podobnych zadań równolegle. Buduje obraz z geometrii, tekstur i światła, a gotową klatkę wysyła do monitora. Ma własną pamięć VRAM.',
     fact: 'Wyższa rozdzielczość oznacza więcej pikseli do obliczenia. Szybszy procesor nie usunie ograniczenia po stronie GPU.',
     spec: 'GEOMETRIA → PIKSELE',
-    position: [0.35, 2.65, 1.25],
+    position: [-0.35, 2.65, -1.25],
   },
   {
     id: 'ram',
@@ -46,7 +46,7 @@ export const parts: {
       'RAM przechowuje dane uruchomionych programów. Procesor może szybko je odczytywać i zmieniać. Po wyłączeniu zasilania zawartość RAM znika.',
     fact: 'Kiedy brakuje RAM, system może przenosić część danych na dysk. To pomaga działać dalej, ale jest znacznie wolniejsze.',
     spec: 'SZYBKA / ULOTNA',
-    position: [2.04, 1.25, -1.25],
+    position: [-2.04, 1.25, 1.25],
   },
   {
     id: 'board',
@@ -58,7 +58,7 @@ export const parts: {
       'Ścieżki, gniazda i magistrale łączą podzespoły. RAM komunikuje się z kontrolerem pamięci procesora, a GPU i NVMe korzystają z PCI Express. Chipset obsługuje dodatkowe połączenia.',
     fact: 'Podzespoły muszą być zgodne: liczy się m.in. gniazdo CPU, generacja RAM, firmware i dostępne linie PCIe.',
     spec: 'POŁĄCZENIA / PCIe',
-    position: [-1.6, 0.3, 2],
+    position: [1.6, 0.3, -2],
   },
   {
     id: 'ssd',
@@ -70,7 +70,7 @@ export const parts: {
       'SSD zapisuje system, programy i pliki w pamięci flash NAND. Model NVMe korzysta z PCIe. Przy uruchomieniu aplikacji potrzebne dane są odczytywane do RAM.',
     fact: 'Szybki SSD skraca wczytywanie. Zwykle nie zwiększa liczby klatek, jeśli gra ma już potrzebne dane w pamięci.',
     spec: 'TRWAŁA / FLASH NAND',
-    position: [-0.2, 0.35, 1.43],
+    position: [0.2, 0.35, -1.43],
   },
   {
     id: 'psu',
@@ -82,7 +82,7 @@ export const parts: {
       'Zasilacz zamienia prąd przemienny z sieci na stabilne napięcia stałe. Układy VRM obniżają je dalej, między innymi do napięcia potrzebnego procesorowi.',
     fact: '650 W to dostępna moc wyjściowa, a nie stały pobór. Komputer pobiera tyle, ile potrzebują podzespoły, plus straty zasilacza.',
     spec: 'AC → DC / 650 W',
-    position: [-4.22, 1.9, -0.35],
+    position: [-4.97, 1.9, -0.35],
   },
   {
     id: 'cooler',
@@ -94,7 +94,7 @@ export const parts: {
       'Ciepło przechodzi przez pastę do miedzianej podstawy. Ciepłowody w kształcie litery U unoszą je do wieży cienkich żeberek, a wentylator przepycha powietrze między nimi w stronę tylnego panelu.',
     fact: 'Chłodzenie przenosi ciepło do otoczenia. Słaby przepływ powietrza podnosi temperaturę i może wymusić obniżenie taktowania.',
     spec: 'CIEPŁO → OTOCZENIE',
-    position: [0.1, 2.65, -1.1],
+    position: [-0.1, 2.65, 1.1],
   },
 ];
 export const steps: { title: string; text: string; from: PartId; to: PartId; tag: string }[] = [

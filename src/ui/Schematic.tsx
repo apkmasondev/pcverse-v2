@@ -6,26 +6,28 @@ import PartGlyph from './PartGlyph';
 const W = 960,
   H = 680;
 // Top view of the exhibit, laid out after the model's footprint (1 scene unit ≈ 100 px).
+// The board faces its rear I/O away from the PSU, so the socket sits low and the GPU tip
+// reaches towards the PSU, as in the 3D model.
 const boxes: Record<PartId, [number, number, number, number]> = {
-  psu: [40, 150, 260, 310],
+  psu: [14, 150, 240, 310],
   board: [350, 40, 490, 600],
-  cooler: [505, 62, 170, 96],
-  cpu: [540, 182, 100, 100],
-  ram: [745, 80, 64, 270],
-  gpu: [360, 398, 548, 76],
-  ssd: [470, 528, 200, 54],
+  cooler: [515, 522, 170, 96],
+  cpu: [550, 398, 100, 100],
+  ram: [381, 330, 64, 270],
+  gpu: [282, 206, 548, 76],
+  ssd: [520, 98, 200, 54],
 };
 type Trace = 'ssd-ram' | 'ram-cpu' | 'cpu-gpu' | 'psu-board' | 'cpu-cooler';
 const traces: Record<Trace, { d: string; kind: 'data' | 'power' | 'heat'; ends: PartId[] }> = {
-  'ssd-ram': { d: 'M670 555 H725 V300 H745', kind: 'data', ends: ['ssd', 'ram'] },
-  'ram-cpu': { d: 'M745 232 H640', kind: 'data', ends: ['ram', 'cpu'] },
-  'cpu-gpu': { d: 'M590 282 V398', kind: 'data', ends: ['cpu', 'gpu'] },
+  'ssd-ram': { d: 'M520 125 H465 V380 H445', kind: 'data', ends: ['ssd', 'ram'] },
+  'ram-cpu': { d: 'M445 448 H550', kind: 'data', ends: ['ram', 'cpu'] },
+  'cpu-gpu': { d: 'M600 398 V282', kind: 'data', ends: ['cpu', 'gpu'] },
   'psu-board': {
-    d: 'M300 250 H350 M300 330 H322 V620 H430 V640',
+    d: 'M254 300 H300 V405 H368 M254 400 H290 V652 H690 V623',
     kind: 'power',
     ends: ['psu', 'board'],
   },
-  'cpu-cooler': { d: 'M570 182 V158 M610 182 V158', kind: 'heat', ends: ['cpu', 'cooler'] },
+  'cpu-cooler': { d: 'M580 498 V522 M620 498 V522', kind: 'heat', ends: ['cpu', 'cooler'] },
 };
 const stepTraces: Trace[][] = [['ssd-ram'], ['ram-cpu'], ['cpu-gpu'], ['psu-board', 'cpu-cooler']];
 
@@ -93,7 +95,7 @@ export default function Schematic({
             <circle key={`${x}-${y}`} cx={x} cy={y} r="7" className="sch-hole" />
           ))}
           <path
-            d="M380 500 H720 M380 506 H720 M770 80 V350 M780 80 V350 M390 120 H470 M390 140 H470 M390 160 H470"
+            d="M810 180 H470 M810 174 H470 M420 600 V330 M410 600 V330 M800 560 H720 M800 540 H720 M800 520 H720"
             className="sch-silk"
           />
           <text x="386" y="62" className="sch-text">

@@ -41,13 +41,13 @@ const offsets: Record<string, [number, number, number]> = {
   psu: [0, 0, 0],
 };
 const centers: Record<PartId, [number, number, number]> = {
-  cpu: [0, 0.36, -1.1],
-  gpu: [0.35, 1.4, 0.9],
-  ram: [1.81, 0.65, -1.25],
+  cpu: [0, 0.36, 1.1],
+  gpu: [-0.35, 1.4, -0.9],
+  ram: [-1.81, 0.65, 1.25],
   board: [0, 0.25, 0],
-  ssd: [-0.2, 0.2, 1.43],
-  psu: [-4.22, 0.72, -0.35],
-  cooler: [0.1, 1.6, -1.1],
+  ssd: [0.2, 0.2, -1.43],
+  psu: [-4.97, 0.72, -0.35],
+  cooler: [-0.1, 1.6, 1.1],
 };
 const partIds = new Set<string>(parts.map((p) => p.id));
 const HOT = new Color('#ff6a2b');
@@ -476,7 +476,7 @@ function Flow({ spread, step, reduced, running, mode, workload }: Props) {
   );
 }
 
-/** Air enters through the tower fan on the +X side, crosses the fin stack and leaves towards the rear I/O. */
+/** Air enters on the -X side and crosses the tower towards the outward-facing rear I/O (+X). */
 function Airflow({ spread, airflow, temperature, reduced, running, mode, selected }: Props) {
   const arrows = useRef<Group>(null);
   const active = (mode === 'lab' && running) || (mode === 'anatomy' && selected === 'cooler');
@@ -487,7 +487,7 @@ function Airflow({ spread, airflow, temperature, reduced, running, mode, selecte
     arrows.current.children.forEach((arrow, i) => {
       const travel = (clock.elapsedTime * airflow * 0.006 + i / 9) % 1;
       arrow.position.set(
-        center.x + 1.25 - travel * 2.5,
+        center.x - 1.25 + travel * 2.5,
         base + ((i % 3) - 1) * 0.45,
         center.z + (((i * 7) % 3) - 1) * 0.42,
       );
@@ -500,7 +500,7 @@ function Airflow({ spread, airflow, temperature, reduced, running, mode, selecte
     <group>
       <Html position={[center.x, center.y + 0.95, center.z]} center zIndexRange={[4, 0]}>
         <span className={`airflow-tag ${hot ? 'hot' : ''}`}>
-          ←{' '}
+          →{' '}
           {mode === 'lab'
             ? `AIR ${airflow}% · ${temperature}°C`
             : 'POWIETRZE PRZECHODZI PRZEZ ŻEBRA'}
@@ -509,7 +509,7 @@ function Airflow({ spread, airflow, temperature, reduced, running, mode, selecte
       {!reduced && airflow > 0 && (
         <group ref={arrows}>
           {Array.from({ length: 9 }, (_, i) => (
-            <mesh key={i} rotation={[0, 0, Math.PI / 2]}>
+            <mesh key={i} rotation={[0, 0, -Math.PI / 2]}>
               <coneGeometry args={[0.045, 0.17, 5]} />
               <meshBasicMaterial color={hot ? '#ff5a36' : '#5fd4c4'} toneMapped={false} />
             </mesh>
@@ -570,7 +570,7 @@ function Labels({
         : mode === 'lab'
           ? []
           : [
-              ...(selected ? [selected] : (['psu', 'gpu', 'ram'] as const)),
+              ...(selected ? [selected] : (['psu', 'gpu', 'cooler'] as const)),
               ...(hovered ? [hovered] : []),
             ];
   return (
@@ -611,7 +611,7 @@ function framing(
   const visible = Math.max(240, size.width - insets.left - insets.right);
   const aspect = visible / Math.max(1, size.height);
   if (!focusPart)
-    return new Vector3(10.5, 9.9, 13).multiplyScalar(MathUtils.clamp(1.2 / aspect, 0.92, 1.4));
+    return new Vector3(10.5, 10.3, -14).multiplyScalar(MathUtils.clamp(1.2 / aspect, 0.92, 1.4));
   const scale =
     focusPart === 'gpu' || focusPart === 'board'
       ? 1.15
@@ -620,7 +620,12 @@ function framing(
         : focusPart === 'cpu' || focusPart === 'ssd'
           ? 0.4
           : 0.65;
-  return new Vector3(5, 4, 7).multiplyScalar(scale * MathUtils.clamp(1 / aspect, 1, 1.75));
+  // The tower's fan now faces -X, so its close-up orbits in from that side.
+  return new Vector3(
+    focusPart === 'cooler' ? -5 : 5,
+    4,
+    focusPart === 'psu' ? 7 : -7,
+  ).multiplyScalar(scale * MathUtils.clamp(1 / aspect, 1, 1.75));
 }
 
 function CameraRig({
@@ -652,8 +657,8 @@ function CameraRig({
             new Vector3(...offsets[focusPart]).multiplyScalar(focusSpread),
           )
         : building
-          ? new Vector3(-0.7, 0.8, 0)
-          : new Vector3(-0.5, 1.1, 0),
+          ? new Vector3(-0.9, 0.8, 0)
+          : new Vector3(-1.05, 1.1, 0),
     [focusPart, focusSpread, building],
   );
   const frame = useRef({ size, insets });
@@ -690,12 +695,12 @@ function CameraRig({
                 ? focusPart === 'psu'
                   ? // ATX rear wall: IEC inlet, switch and exhaust face away from the board.
                     new Vector3(-1, 0.15, 0.12)
-                  : new Vector3(-0.15, 0.15, -1)
+                  : new Vector3(0.15, 0.15, 1)
                 : view === 'ports'
                   ? focusPart === 'psu'
                     ? new Vector3(1, 0.18, 0.12)
-                    : new Vector3(-1, 0.18, 0.04)
-                  : new Vector3(0, 0.12, 1),
+                    : new Vector3(1, 0.18, -0.04)
+                  : new Vector3(0, 0.12, focusPart === 'psu' ? 1 : -1),
         )
         .normalize()
         .multiplyScalar(distance);
@@ -801,7 +806,7 @@ export default function AtlasScene(props: Props) {
         shadows={{ enabled: !props.low, type: PCFShadowMap }}
         dpr={props.low ? 1 : [1, 1.5]}
         frameloop={props.onscreen ? 'demand' : 'never'}
-        camera={{ position: [10, 11, 13], fov: 37, near: 0.1, far: 90 }}
+        camera={{ position: [10, 11, -14], fov: 37, near: 0.1, far: 90 }}
         gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
         onCreated={({ gl }) => {
           gl.setClearColor('#0b0d0c', 0);
@@ -812,7 +817,7 @@ export default function AtlasScene(props: Props) {
       >
         <ambientLight intensity={props.isolated ? 0.26 : 0.14} />
         <directionalLight
-          position={[4, 10, 5]}
+          position={[4, 10, -5]}
           intensity={props.isolated ? 2.1 : 2.2}
           color={props.isolated ? '#ffffff' : '#fff5eb'}
           castShadow={!props.low}
@@ -826,12 +831,12 @@ export default function AtlasScene(props: Props) {
           shadow-bias={-0.00015}
         />
         <directionalLight
-          position={[-7, 5, -6]}
+          position={[-7, 5, 6]}
           intensity={props.isolated ? 1.2 : 1.0}
           color={props.isolated ? '#e8f0ff' : '#b3d4cf'}
         />
         <directionalLight position={[8, 2, -4]} intensity={0.45} color="#ffe2c8" />
-        <directionalLight position={[0, 1, 9]} intensity={1.1} color="#e6eef5" />
+        <directionalLight position={[0, 1, -9]} intensity={1.1} color="#e6eef5" />
         {props.isolated && (
           <directionalLight position={[0, -5, 2]} intensity={1.4} color="#f1f4ff" />
         )}
@@ -841,7 +846,7 @@ export default function AtlasScene(props: Props) {
           <FlexibleHarness {...props} />
           <Flow {...props} />
           {props.build?.paste && (
-            <mesh position={[0, 0.408, -1.1]}>
+            <mesh position={[0, 0.408, 1.1]}>
               <cylinderGeometry args={[0.2, 0.22, 0.008, 40]} />
               <meshStandardMaterial color="#9aa19e" roughness={0.5} metalness={0.25} />
             </mesh>

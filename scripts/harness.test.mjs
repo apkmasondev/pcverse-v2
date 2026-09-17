@@ -19,11 +19,16 @@ test('GPU power wires clear the cooler, fans and rear bracket throughout disasse
       }
       // Include wire radius plus a visible air gap around the entire GPU envelope.
       for (const p of points) {
-        const x = p.x,
-          y = -p.z,
+        // Check in the board's original local frame after the 180° Y-up rotation.
+        const x = -p.x,
+          y = p.z,
           z = p.y - spread * 1.4;
         const inside = x > -2.62 && x < 3.24 && y > -1.39 && y < -0.4 && z > 0.12 && z < 2.65;
         assert.ok(!inside, `wire ${i}, spread ${spread}, point ${[x, y, z]}`);
+        assert.ok(
+          !(p.x < -3.64 && p.y < 1.72 && p.z > -1.9 && p.z < 1.2),
+          `wire ${i} enters the relocated PSU`,
+        );
         const boardCollision =
           x > -2.5 && x < 2.5 && y > -3.13 && y < 3.13 && p.y > -0.1 && p.y < 0.8;
         assert.ok(
@@ -35,6 +40,9 @@ test('GPU power wires clear the cooler, fans and rear bracket throughout disasse
         Math.abs(end.y - (2.91 + spread * 1.4)) < 0.00001,
         'wire must meet the plug outlet',
       );
+      const bank = Math.floor(i / 8);
+      assert.ok(Math.abs(end.x + 1.46 + bank * 0.42 + ((i % 4) - 1.5) * 0.065) < 1e-6);
+      assert.ok(Math.abs(curve.getPoint(0).x + 3.41) < 1e-6, 'PSU outlet moved with the enclosure');
     }
   }
 });

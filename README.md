@@ -37,7 +37,7 @@ Złóż komputer w kolejności serwisanta: procesor, pasta termoprzewodząca, ch
 ## Jak powstało
 
 - **Model w 100% ze skryptów.** Cała scena powstaje w Blenderze 5.2 z kodu Pythona (`scripts/build_atlas.py`), bez ręcznego klikania. Asercje pilnują realizmu i prześwitów: wieżowe chłodzenie z ciepłowodami U i wentylatorem na wlocie, karta prostopadła do płyty w złączu PCIe, zasilacz ATX z gniazdami modułowymi z przodu i gniazdem IEC z tyłu, pamięci w gniazdach A2/B2, osobne wiązki ATX 24-pin, EPS 8-pin i PCIe.
-- **Lekko mimo szczegółów.** 208 tys. trójkątów skompresowanych meshoptem z 10,4 MB do 4,2 MB. Dekoder jest w bundlu, więc strona nie łączy się z żadnym CDN. Cienie są przeliczane tylko przy ruchu, a gdy nikt nie korzysta ze strony, wentylatory zwalniają i scena przestaje renderować.
+- **Lekko mimo szczegółów.** 204 tys. trójkątów skompresowanych meshoptem z 10,3 MiB do 4,2 MiB. Dekoder jest w bundlu, więc strona nie łączy się z żadnym CDN. Cienie są przeliczane tylko przy ruchu, a gdy nikt nie korzysta ze strony, wentylatory zwalniają i scena przestaje renderować.
 - **Interfejs jak przyrząd pomiarowy.** Ciemny stół serwisowy, ekran startowy w stylu BIOS z prawdziwym postępem ładowania, oznaczenia części jak na PCB (U1, PCIE1, DIMM1), skróty klawiszowe (A/D/L/M, 1–7, E, F, R, Spacja, ?).
 - **Dostępny.** Schemat 2D bez WebGL (`?2d`), pełna obsługa klawiaturą, `prefers-reduced-motion`, ręczna pauza animacji i układ mobilny.
 - **Sprawdzane automatycznie.** Testy symulacji, logiki montażu i diagnostyki, tras elastycznych przewodów oraz skompresowanego modelu uruchamia CI przed każdym wdrożeniem na GitHub Pages.
@@ -61,6 +61,8 @@ Przebudowa modelu (wymaga Blendera 5.2 w PATH, ok. 6 min):
 npm run model:build     # scena w Blenderze + kompresja
 npm run model:optimize  # sama kompresja art/export/atlas.raw.glb
 ```
+
+Układ eksponatu: `finish_atlas.py` obraca cały zespół płyty o 180° wokół osi pionowej, tak aby tylne I/O i wyjścia GPU były skierowane na zewnątrz (+X). Zasilacz jest odsunięty o 0,75 jednostki, a jego przesunięcie zapisane w dzieciach — korzenie podzespołów pozostają w początku układu na potrzeby animacji montażu. Statyczne wiązki ATX/EPS oraz podpora GPU powstają bezpośrednio w nowym układzie. Trasy ruchomych przewodów są w `src/atlas/harness.ts`; po zmianie rozmieszczenia trzeba również dopasować etykiety w `content.ts`, kadry i przepływ powietrza w `AtlasScene.tsx` oraz przebudować i przetestować GLB.
 
 ## Struktura
 

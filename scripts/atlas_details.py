@@ -168,9 +168,9 @@ for x in [1.46,1.88]:
     box('GPU cable strain relief',(x,-.76,2.884),(.29,.21,.05),black,.01)
 # Support arm rests on the bench without intersecting fans.
 part='base'
-box('GPU support foot',(2.82,-.70,-.125),(.32,.48,.14),navy,.025)
-cyl('GPU support post',(2.82,-.70,.145),.055,.40,silver,16)
-box('GPU rubber saddle',(2.82,-.70,.37),(.29,.22,.07),black,.012)
+box('GPU support foot',(-2.82,.70,-.125),(.32,.48,.14),navy,.025)
+cyl('GPU support post',(-2.82,.70,.145),.055,.40,silver,16)
+box('GPU rubber saddle',(-2.82,.70,.37),(.29,.22,.07),black,.012)
 
 part='psu'
 for y in [.03,.44]:box('PCIe PSU modular socket',(-2.90,y,.40),(.13,.33,.27),black,.018)

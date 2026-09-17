@@ -43,6 +43,17 @@ for obj in bpy.data.objects:
         mod=obj.modifiers.new('Subpixel type contours','DECIMATE');mod.ratio=.55
         bpy.context.view_layer.objects.active=obj;bpy.ops.object.modifier_apply(modifier=mod.name)
         obj['lettering_optimized']=True
+# Rotate the installed board assembly as one unit. Roots stay at the origin:
+# the web scene applies disassembly translations to them every frame.
+# PSU translation is baked into its children (including the rotor pivot).
+for name in ['board','cpu','cooler','gpu','gpuWiring','ram','ssd','wiringFan']:
+    bpy.data.objects[name].rotation_euler.z=math.pi
+for name in ['psu','wiringPcie']:
+    root=bpy.data.objects[name]
+    if not root.get('outward_io_layout'):
+        for child in root.children:child.location.x-=.75
+        root['outward_io_layout']=True
+bpy.context.view_layer.update()
 bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT,'art','atlas.blend'))
 # Raw export; `npm run model:optimize` writes the compressed public/models/atlas.glb.

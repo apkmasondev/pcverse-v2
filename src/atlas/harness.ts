@@ -11,24 +11,23 @@ export function harnessPoints(index: number, spread: number): number[][] {
   const socketX = 1.46 + bank * 0.42 + ((pin % 4) - 1.5) * 0.065;
   return index < 16
     ? [
-        [-2.66, 0.03 + bank * 0.41 + d, 0.4 + row],
-        [-2.77, -0.45 + d, 0.41 + row],
-        [-2.8, -1.65 + d, 0.4 + row],
-        [-2.8, -3.48 + d + bank * 0.14, 0.26 + row],
-        [0.4, -3.48 + d + bank * 0.14, 0.27 + row],
-        [3.65 + bank * 0.17, -3.35 + d, 0.63 + spread * 0.5],
-        [3.73 + bank * 0.17, -1.55 + row, 2.65 + rise],
-        [3.62 + bank * 0.17, -0.76 + row, 3.2 + rise],
-        [socketX + 0.22, -0.76 + row, 3.39 + rise],
-        [socketX, -0.76 + row, 3.2 + rise],
-        [socketX, -0.76 + row, 2.91 + rise],
+        // Climb through the gap between the PSU and the GPU tip, then enter
+        // each plug vertically. The board and its headers stay clear below.
+        [-3.41, 0.03 + bank * 0.41 + d, 0.4 + row],
+        [-3.43 - bank * 0.06, 0.16 + bank * 0.41 + d, 0.72],
+        [-3.45 - bank * 0.06, 0.35 + bank * 0.35 + d, 1.7 + rise * 0.4],
+        [-3.42 - bank * 0.06, 0.76 - row, 2.85 + rise],
+        [-3.1 - bank * 0.06, 0.76 - row, 3.27 + rise],
+        [-socketX - 0.22, 0.76 - row, 3.39 + rise],
+        [-socketX, 0.76 - row, 3.2 + rise],
+        [-socketX, 0.76 - row, 2.91 + rise],
       ]
     : [
-        [0.72 + (index - 17.5) * 0.055, 2.43, 0.38],
-        [0.98, 2.3, 0.58],
-        [1.02, 2.08, 0.82 + spread * 1.3],
-        [0.72, 1.95, 0.96 + spread * 2.65],
-        [0.5 + (index - 17.5) * 0.02, 1.9, 0.98 + spread * 2.65],
+        [-0.72 - (index - 17.5) * 0.055, -2.43, 0.38],
+        [-0.98, -2.3, 0.58],
+        [-1.02, -2.08, 0.82 + spread * 1.3],
+        [-0.72, -1.95, 0.96 + spread * 2.65],
+        [-0.5 - (index - 17.5) * 0.02, -1.9, 0.98 + spread * 2.65],
       ];
 }
 

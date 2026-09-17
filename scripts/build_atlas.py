@@ -146,12 +146,12 @@ gf= textured('GPU machined metal','art/textures/gpu-metal-v3.png',.5,.42)
 ct= textured('CPU laser etching','art/textures/cpu-ihs-v3.png',.55,.4)
 rt= textured('PCVerse memory spreader','art/textures/ram-side-v2.png',.45,.4)
 part='base'
-box('Exhibit tray',(-1.15,0,-.32),(9.5,8.0,.25),white,.12)
-box('Graphite edge',(-1.15,0,-.5),(9.3,7.8,.14),navy,.08)
-for x in [-5.4,3.1]:
+box('Exhibit tray',(-1.525,0,-.32),(10.25,8.0,.25),white,.12)
+box('Graphite edge',(-1.525,0,-.5),(10.05,7.8,.14),navy,.08)
+for x in [-6.15,3.1]:
     for y in [-2.9,2.9]:cyl('Rubber foot',(x,y,-.6),.2,.12,black)
-text('P C V / 0 2',(-5.45,-3.88,-.18),.16,navy)
-text('OPEN BENCH / HARDWARE ATLAS',(-.7,-3.88,-.18),.12,navy)
+text('P C V / 0 2',(3.1,3.88,-.18),.16,navy).rotation_euler.z=math.pi
+text('OPEN BENCH / HARDWARE ATLAS',(-1.3,3.88,-.18),.12,navy).rotation_euler.z=math.pi
 part='board'
 box('ATX motherboard',(0,0,0),(4.88,6.1,.13),pcb,.025)
 top('PCB surface',0,0,.067,4.88,6.1,mb)
@@ -308,32 +308,33 @@ for count,cy,pitch in [(12,-.50,.055),(4,1.15,.07)]:
 # Each has its own plugs, latch, strain relief and combs. PSU/MB use no false printed plugs.
 # Separate harness roots let the assembly mode connect each plug on its own.
 part='wiringAtx'
-box('ATX PSU plug',(-2.78,-.50,.82),(.24,.70,.27),nylon,.018)
-box('ATX board plug',(2.27,.65,.48),(.25,1.04,.26),nylon,.018)
-box('ATX locking tab',(2.42,.65,.43),(.065,.24,.16),black,.008)
+box('ATX PSU plug',(-3.53,-.50,.82),(.24,.70,.27),nylon,.018)
+box('ATX board plug',(-2.27,-.65,.48),(.25,1.04,.26),nylon,.018)
+box('ATX locking tab',(-2.42,-.65,.43),(.065,.24,.16),black,.008)
 for i in range(12):
     d=(i-5.5)*.045
     for layer in [-1,1]:
         dz=layer*.026
         cable('ATX 24 sleeved wire',[
-            (-2.66,-.50+d,.82+dz),(-2.64,-1.5+d,.52+dz),(-2.76,-3.36+d,.16+dz),
-            (-1.95,-3.48+d,.06+dz),(.25,-3.48+d,.06+dz),(2.73,-3.34+d,.12+dz),
-            (2.86,-1.65+d,.20+dz),(2.83,.65+d,.76+dz),(2.27+dz,.65+d*1.7,.61)],.021,sleeve)
-for x in [-1.40,.1,1.6]:box('ATX cable comb',(x,-3.48,.066),(.075,.58,.11),navy,.018)
+            (-3.41,-.50+d,.82+dz),(-3.14,-.54+d,1.04+dz),
+            (-2.73,-.65+d*1.7,1.09+dz),(-2.27+dz,-.65+d*1.7,.84),
+            (-2.27+dz,-.65+d*1.7,.61)],.021,sleeve)
+box('ATX cable comb',(-2.73,-.65,1.09),(.075,.96,.12),navy,.018)
 part='wiringEps'
-box('EPS PSU plug',(-2.78,1.15,.82),(.24,.34,.24),nylon,.018)
-box('EPS board plug',(-.95,2.83,.39),(.49,.25,.18),nylon,.015)
-box('EPS locking tab',(-.95,2.66,.35),(.16,.055,.11),black,.008)
+box('EPS PSU plug',(-3.53,1.15,.82),(.24,.34,.24),nylon,.018)
+box('EPS board plug',(.95,-2.83,.39),(.49,.25,.18),nylon,.015)
+box('EPS locking tab',(.95,-2.66,.35),(.16,.055,.11),black,.008)
 for i in range(4):
     d=(i-1.5)*.06
     for layer in [-1,1]:
         dz=layer*.028
         cable('EPS 8 sleeved wire',[
-            (-2.66,1.15+d,.82+dz),(-2.56,2.55+d,.63+dz),(-2.30,3.20+d,.46+dz),
-            (-1.23,3.25+d,.49+dz),(-.95+d,3.12,.60+dz),(-.95+d,2.83+dz,.48)],.024,sleeve)
-box('EPS cable comb',(-1.70,3.22,.475),(.07,.28,.13),navy,.012)
+            (-3.41,1.15+d,.82+dz),(-3.34,1.55+d,.54+dz),(-3.34,.35+d,.14+dz),
+            (-3.34,-2.80+d,.14+dz),(-2.90,-3.40+d,.14+dz),(.35,-3.40+d,.23+dz),
+            (.95+d,-3.27,.56+dz),(.95+d,-3.08,.62+dz),(.95+d,-2.83+dz,.48)],.024,sleeve)
+box('EPS cable comb',(-1.70,-3.40,.16),(.07,.28,.13),navy,.012)
 part='base'
-text('24-PIN',(-.3,-3.81,-.175),.09,white)
+text('CPU / EPS',(-1.9,-3.72,-.175),.09,white)
 # Deterministic assembly checks run before export; a regression must fail the build.
 assert -2.61+.68/2 < -1.95-.18/2, 'Chipset must clear the second PCIe slot'
 assert 2.40+.45/2 < 2.83-.25/2, 'VRM fins must clear the EPS plug'
