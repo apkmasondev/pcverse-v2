@@ -127,6 +127,10 @@ export const steps: { title: string; text: string; from: PartId; to: PartId; tag
     tag: '04 / ENERGIA I CIEPŁO',
   },
 ];
+/** Data-path stage highlighted by a channel: the lab points at the stage its workload leans on. */
+export function activeStep(mode: Mode, step: number, workload: Workload): number {
+  return mode === 'lab' ? (workload === 'game' ? 2 : workload === 'render' ? 1 : 0) : step;
+}
 export type Workload = 'game' | 'render' | 'tabs';
 export const workloads: { id: Workload; name: string; short: string }[] = [
   { id: 'game', name: 'Gra 3D', short: '01' },

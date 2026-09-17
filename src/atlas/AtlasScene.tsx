@@ -33,7 +33,7 @@ import {
   TubeGeometry,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { parts, steps } from './content';
+import { activeStep, parts, steps } from './content';
 import { harnessCurve } from './harness';
 import type { Mode, PartId, Workload } from './content';
 import type { BuildView } from './assembly';
@@ -61,7 +61,9 @@ const centers: Record<PartId, [number, number, number]> = {
   cooler: [-0.1, 1.6, 1.1],
 };
 const partIds = new Set<string>(parts.map((p) => p.id));
-const HOT = new Color('#ff6a2b');
+// One palette for every overlay drawn on the exhibit, matching the interface tokens.
+const PALETTE = { data: '#ff6a2b', power: '#ffc14d', cool: '#5fd4c4', hot: '#ff4d3d' } as const;
+const HOT = new Color(PALETTE.data);
 const MODEL_URL = import.meta.env.BASE_URL + 'models/atlas.glb';
 const ENV_URL = import.meta.env.BASE_URL + 'environments/studio_small_03_1k.hdr';
 
@@ -727,40 +729,82 @@ function position(id: PartId, spread: number) {
   return new Vector3(...part.position).add(new Vector3(...offset).multiplyScalar(spread));
 }
 
-function Flow({ spread, step, reduced, running, mode, workload }: Props) {
+/** The stage shown by the data-path channel, or the one the current lab workload leans on. */
+function flowStep({ mode, step, workload }: Props) {
+  return steps[activeStep(mode, step, workload)];
+}
+// The graphics card stands across the board at this depth and hides everything behind it.
+const CARD_PLANE = -0.85;
+const CARD_TOP = 2.67;
+
+function Flow(props: Props) {
+  const { spread, step, reduced, running, mode } = props;
   const particles = useRef<Group>(null);
-  const current =
-    steps[mode === 'lab' ? (workload === 'game' ? 2 : workload === 'render' ? 1 : 0) : step];
+  const current = flowStep(props);
   const power = mode === 'signal' && step === 3;
-  const path = useMemo(() => {
-    const start = position(current.from, spread),
-      end = position(current.to, spread);
-    return [
-      start,
-      new Vector3(start.x, start.y + 0.6, start.z),
-      new Vector3(end.x, end.y + 0.6, end.z),
-      end,
-    ];
+  const curve = useMemo(() => {
+    const start = position(current.from, spread);
+    const end = position(current.to, spread);
+    // A link that crosses the card arcs clearly above it, so it cannot be read as ending there.
+    const crossesCard = start.z < CARD_PLANE !== end.z < CARD_PLANE;
+    const apex = crossesCard
+      ? Math.max(start.y, end.y, CARD_TOP + 0.55)
+      : Math.max(start.y, end.y) + 0.55;
+    return new CatmullRomCurve3(
+      [
+        start,
+        new Vector3(start.x, (start.y + apex) / 2, start.z),
+        new Vector3(start.x * 0.6 + end.x * 0.4, apex, start.z * 0.6 + end.z * 0.4),
+        new Vector3(end.x * 0.6 + start.x * 0.4, apex, end.z * 0.6 + start.z * 0.4),
+        new Vector3(end.x, (end.y + apex) / 2, end.z),
+        end,
+      ],
+      false,
+      'centripetal',
+    );
   }, [current, spread]);
+  const points = useMemo(() => curve.getPoints(72), [curve]);
   useFrame(({ clock, invalidate }) => {
     if (!particles.current || reduced || !(mode === 'signal' || running)) return;
     particles.current.children.forEach((p, i) => {
-      const t = ((clock.elapsedTime * 0.4 + i / 6) % 1) * 3,
-        index = Math.min(2, Math.floor(t));
-      p.position.lerpVectors(path[index], path[index + 1], t - index);
+      p.position.copy(curve.getPointAt((clock.elapsedTime * 0.22 + i / 6) % 1));
     });
     invalidate();
   });
   if (mode !== 'signal' && !running) return null;
-  const tone = power ? '#ffc14d' : '#ff6a2b';
+  const tone = power ? PALETTE.power : PALETTE.data;
   return (
     <group>
-      <Line points={path} color={tone} lineWidth={2} dashed dashSize={0.1} gapSize={0.07} />
+      {/* Drawn over the model, like the airflow streams: the bridge above the card stays readable. */}
+      <Line
+        points={points}
+        color={tone}
+        lineWidth={2.4}
+        dashed
+        dashSize={0.1}
+        gapSize={0.07}
+        transparent
+        opacity={0.95}
+        depthTest={false}
+      />
+      {/* Rings mark exactly which parts the line joins. */}
+      {[current.from, current.to].map((id) => {
+        const at = position(id, spread);
+        return (
+          <mesh key={id} position={[at.x, at.y, at.z]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.16, 0.022, 8, 24]} />
+            <meshBasicMaterial color={tone} toneMapped={false} depthTest={false} transparent />
+          </mesh>
+        );
+      })}
       {power && (
         <Line
           points={[position('cpu', spread), position('cooler', spread)]}
-          color="#5fd4c4"
+          color={PALETTE.cool}
           lineWidth={4}
+          transparent
+          opacity={0.95}
+          depthTest={false}
         />
       )}
       {!reduced && (
@@ -768,7 +812,7 @@ function Flow({ spread, step, reduced, running, mode, workload }: Props) {
           {Array.from({ length: 6 }, (_, i) => (
             <mesh key={i}>
               <sphereGeometry args={[0.05, 10, 10]} />
-              <meshBasicMaterial color={tone} toneMapped={false} />
+              <meshBasicMaterial color={tone} toneMapped={false} depthTest={false} transparent />
             </mesh>
           ))}
         </group>
@@ -780,9 +824,9 @@ function Flow({ spread, step, reduced, running, mode, workload }: Props) {
 // Tower cooler geometry in scene units (see scripts/build_atlas.py): the 120 mm fan sits on
 // the -X face, the fin stack spans x ±0.37 and the airflow leaves towards the rear I/O (+X).
 const TOWER = { fanX: -0.61, finsX: 0.37, fanY: 1.66, z: 1.1, top: 2.5 };
-const INTAKE = new Color('#5fd4c4');
-const WARM = new Color('#ffc14d');
-const HOT_AIR = new Color('#ff4d3d');
+const INTAKE = new Color(PALETTE.cool);
+const WARM = new Color(PALETTE.power);
+const HOT_AIR = new Color(PALETTE.hot);
 const STREAMS: [number, number][] = [
   [0, 0],
   [0.36, -0.3],
@@ -915,17 +959,9 @@ function PerformanceGuard({
   return null;
 }
 
-function Labels({
-  selected,
-  hovered,
-  onSelect,
-  onHover,
-  spread,
-  mode,
-  step,
-  isolated,
-  build,
-}: Props) {
+function Labels(props: Props) {
+  const { selected, hovered, onSelect, onHover, spread, mode, step, isolated, build, running } =
+    props;
   if (isolated) return null;
   const shown: PartId[] =
     mode === 'signal'
@@ -937,13 +973,29 @@ function Labels({
           ? [build.pending]
           : []
         : mode === 'lab'
-          ? []
+          ? running
+            ? [flowStep(props).from, flowStep(props).to]
+            : []
           : [
               ...(selected ? [selected] : (['psu', 'gpu', 'cooler'] as const)),
               ...(hovered ? [hovered] : []),
             ];
+  // The chosen (or awaited) part can sit behind the graphics card; an overlay ring points at it.
+  const markedPart = build ? build.pending : mode === 'anatomy' ? selected : null;
+  const marked = markedPart ? position(markedPart, spread) : null;
   return (
     <>
+      {marked && (
+        <mesh position={[marked.x, marked.y, marked.z]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.16, 0.022, 8, 24]} />
+          <meshBasicMaterial
+            color={PALETTE.data}
+            toneMapped={false}
+            depthTest={false}
+            transparent
+          />
+        </mesh>
+      )}
       {parts
         .filter((p) => shown.includes(p.id))
         .map((p) => (

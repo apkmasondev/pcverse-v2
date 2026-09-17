@@ -405,7 +405,7 @@ export default function App() {
   );
 
   return (
-    <div className={`app mode-${mode} ${motionOff ? 'still' : ''}`}>
+    <div className={`app ${motionOff ? 'still' : ''}`}>
       <a className="skip-link" href="#panel">
         Przejdź do panelu
       </a>

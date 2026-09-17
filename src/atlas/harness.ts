@@ -2,7 +2,7 @@ import { CatmullRomCurve3, Vector3 } from 'three';
 
 /** Cable centres in Blender's Z-up frame. The GPU corridor clears both the
  * rear bracket and the entire fin stack before turning above the power sockets. */
-export function harnessPoints(index: number, spread: number): number[][] {
+function harnessPoints(index: number, spread: number): number[][] {
   const bank = Math.floor(index / 8);
   const pin = index % 8;
   const d = ((pin % 4) - 1.5) * 0.045;

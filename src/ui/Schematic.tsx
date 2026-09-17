@@ -1,4 +1,4 @@
-import { parts } from '../atlas/content';
+import { activeStep, parts } from '../atlas/content';
 import type { Mode, PartId, Workload } from '../atlas/content';
 import type { BuildView } from '../atlas/assembly';
 import PartGlyph from './PartGlyph';
@@ -64,10 +64,7 @@ export default function Schematic({
         ? stepTraces[step]
         : mode === 'lab'
           ? running
-            ? [
-                workload === 'game' ? 'cpu-gpu' : workload === 'render' ? 'ram-cpu' : 'ssd-ram',
-                'cpu-cooler',
-              ]
+            ? [...stepTraces[activeStep(mode, step, workload)], 'cpu-cooler']
             : []
           : (Object.keys(traces) as Trace[]).filter((t) =>
               traces[t].ends.some((e) => e === (hovered ?? selected)),
