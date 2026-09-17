@@ -69,7 +69,7 @@ def usb3(y,z):
 
 # The lowest stack keeps plain USB 2.0 ports, as most boards still do.
 for y in [.25,.79,1.33]:
-    box('USB stack housing',(-2.15,y,.39),(.56,.45,.58),silver,.018)
+    box('USB stack housing',(-2.15,y,.37),(.56,.45,.62),silver,.018)
     for z in [.25,.51]:
         box('USB black recessed opening',(-2.436,y,z),(.014,.36,.17),black,.009)
         box('USB tongue',(-2.447,y,z-.027),(.021,.29,.035),black if y<.4 else blue,.004)
@@ -81,14 +81,14 @@ for i in range(8):box('RJ45 spring',(-2.452,1.785+i*.035,.39),(.012,.014,.12),go
 # A single USB port shares the network jack's housing, as combo blocks do on real boards.
 usb3(1.91,.60)
 # The last free stretch of the panel carries a second USB 3.2 Gen 2 stack.
-box('USB stack housing',(-2.18,2.45,.39),(.50,.45,.58),silver,.018)
+box('USB stack housing',(-2.18,2.45,.37),(.50,.45,.62),silver,.018)
 for z in [.25,.51]:usb3(2.45,z)
 # Colour-coded analogue audio: green line output, pink microphone input.
 for y,insert in [(-.13,green),(-.37,pink)]:
     o=cyl('Audio jack collar',(-2.448,y,.31),.088,.025,silver,24);o.rotation_euler.y=math.pi/2
     o=cyl('Audio jack insert',(-2.462,y,.31),.062,.012,insert,24);o.rotation_euler.y=math.pi/2
     o=cyl('Audio jack bore',(-2.470,y,.31),.038,.01,black,24);o.rotation_euler.y=math.pi/2
-    box('Audio jack body',(-2.13,y,.25),(.54,.18,.27),black,.01)
+    box('Audio jack body',(-2.13,y,.238),(.54,.18,.345),black,.01)
 
 # Capacitors and chokes occupy explicit free regions, never the PCIe keep-outs.
 for x,y in [(-1.02,.52),(-1.02,.87),(-1.02,1.22),(-1.02,1.57),(-1.02,1.92),(-1.65,2.03),(-1.28,2.03),(-.90,2.03),(-.52,2.03)]:
@@ -202,7 +202,7 @@ box('Power on mark',(PSU_BACK-.118,.55,.61),(.003,.016,.07),ink,.001)
 # A real window in the enclosure, a recessed honeycomb panel and darkness behind it.
 cut(psu_shell,(PSU_BACK,-.45,.75),(.2,1.04,1.28))
 box('PSU interior',(PSU_BACK+.26,-.45,.75),(.03,1.16,1.4),black,0)
-vent=box('PSU honeycomb grille',(PSU_BACK+.03,-.45,.75),(.026,1.06,1.3),silver,.006)
+vent=box('PSU honeycomb grille',(PSU_BACK+.03,-.45,.75),(.026,1.06,1.3),steel,.006)
 for row,z in enumerate([.19,.335,.48,.625,.77,.915,1.06,1.205]):
     for y in [-.92,-.77,-.62,-.47,-.32,-.17,-.02]:
         drill(vent,(PSU_BACK+.03,y+(row%2)*.075,z),.058,.12,axis='X',sides=6)

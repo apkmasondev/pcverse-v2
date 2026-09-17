@@ -16,6 +16,8 @@ def material(name, color, metal=0, rough=.45):
 navy=material('Graphite enamel',(.025,.032,.035),.35)
 pcb=material('Midnight PCB',(.035,.095,.09),.2)
 silver=material('Brushed aluminium',(.48,.55,.57),.8,.3)
+# Perforated panels are the same painted steel as the shell, just bare enough to catch light.
+steel=material('Perforated steel',(.125,.138,.148),.62,.33)
 black=material('Ceramic',(.019,.026,.03),.2)
 nylon=material('Fan satin polymer',(.012,.015,.018),.05,.32)
 sleeve=material('Woven cable sheath',(.009,.012,.014),0,.82)
@@ -162,7 +164,7 @@ part='board'
 box('ATX motherboard',(0,0,0),(4.88,6.1,.13),pcb,.025)
 top('PCB surface',0,0,.067,4.88,6.1,mb)
 for x in [-2.2,2.2]:
-    for y in [-2.8,0,2.8]:
+    for y in [-2.8,-.85,2.8]:
         cyl('Standoff',(x,y,-.12),.065,.15,gold,12)
         cyl('Screw',(x,y,.085),.08,.025,silver)
         for angle in [0,math.pi/2]:
