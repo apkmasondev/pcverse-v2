@@ -11,7 +11,14 @@ import {
   useProgress,
 } from '@react-three/drei';
 import {
+  AdditiveBlending,
+  Box3,
+  CanvasTexture,
   CatmullRomCurve3,
+  DoubleSide,
+  MeshBasicMaterial,
+  SRGBColorSpace,
+  ShaderMaterial,
   Quaternion,
   Color,
   BufferGeometry,
@@ -30,6 +37,8 @@ import { parts, steps } from './content';
 import { harnessCurve } from './harness';
 import type { Mode, PartId, Workload } from './content';
 import type { BuildView } from './assembly';
+import { THERMAL_RANGE } from './simulation';
+import type { HeatMap } from './simulation';
 
 const offsets: Record<string, [number, number, number]> = {
   base: [0, 0, 0],
@@ -86,6 +95,8 @@ interface Props {
   idle: boolean;
   /** The canvas is scrolled out of view: nothing needs to be drawn. */
   onscreen: boolean;
+  /** Lab thermal camera; null shows the normal materials. */
+  heat: HeatMap | null;
   /** Assembly channel progress; null in every other channel. */
   build: BuildView | null;
 }
@@ -144,8 +155,10 @@ function Model(props: Props) {
     isolated,
     onReady,
     build,
+    heat,
   } = props;
   const { scene } = useGLTF(MODEL_URL, false, true);
+  const moving = useRef(true);
   const { invalidate } = useThree();
   // Each root gets its own material copies, so one part can glow without lighting up
   // every other part that shares the same surface.
@@ -197,10 +210,42 @@ function Model(props: Props) {
     return { model: clone, materials: byPart };
   }, [scene]);
   useEffect(() => () => materials.forEach((list) => list.forEach((m) => m.dispose())), [materials]);
+
+  // Thermal camera: every exported root gets one false-colour material driven by the lab model.
+  const thermal = useMemo(() => {
+    const byRoot = new Map<string, ShaderMaterial>();
+    const originals = new Map<Mesh, Mesh['material']>();
+    model.children.forEach((root) => {
+      byRoot.set(root.name, thermalMaterial());
+      root.traverse((o) => {
+        if (o instanceof Mesh) originals.set(o, o.material);
+      });
+    });
+    return { byRoot, originals };
+  }, [model]);
+  useEffect(() => () => thermal.byRoot.forEach((material) => material.dispose()), [thermal]);
+  useEffect(() => {
+    thermal.originals.forEach((original, mesh) => {
+      let root: Object3D = mesh;
+      while (root.parent && root.parent !== model) root = root.parent;
+      mesh.material = heat ? thermal.byRoot.get(root.name)! : original;
+    });
+    if (heat)
+      model.children.forEach((root) => {
+        const material = thermal.byRoot.get(root.name)!;
+        const part = heat[THERMAL_PART[root.name] ?? 'cables'];
+        const bounds = new Box3().setFromObject(root);
+        material.uniforms.uLow.value = part.low;
+        material.uniforms.uHigh.value = part.high;
+        material.uniforms.uYMin.value = bounds.min.y;
+        material.uniforms.uYMax.value = Math.max(bounds.max.y, bounds.min.y + 0.01);
+      });
+    moving.current = true;
+    invalidate();
+  }, [heat, thermal, model, invalidate]);
   useEffect(() => {
     onReady();
   }, [onReady]);
-  const moving = useRef(true);
   const rotors = useMemo(() => {
     const found: { node: Object3D; part: string; axis: 'x' | 'y' | 'z' }[] = [];
     model.traverse((node) => {
@@ -340,7 +385,7 @@ function Model(props: Props) {
 
 /** Flexible harnesses track the same eased displacement as the exported assemblies.
  * Their PSU/board ends stay fixed; extra slack clears the board and GPU shroud. */
-function FlexibleHarness({ spread, reduced, isolated, low, build }: Props) {
+function FlexibleHarness({ spread, reduced, isolated, low, build, heat }: Props) {
   const { invalidate } = useThree();
   const current = useRef(0);
   const dirty = useRef(true);
@@ -419,7 +464,261 @@ function FlexibleHarness({ spread, reduced, isolated, low, build }: Props) {
       invalidate();
     }
   });
+  const cableHeat = useMemo(() => thermalMaterial(), []);
+  useEffect(() => () => cableHeat.dispose(), [cableHeat]);
+  useEffect(() => {
+    if (heat) setThermalRange(cableHeat, heat.cables.low, heat.cables.high);
+    harness.group.children.forEach((mesh) => {
+      (mesh as Mesh).material = heat ? cableHeat : harness.material;
+    });
+    invalidate();
+  }, [heat, cableHeat, harness, invalidate]);
   return <primitive object={harness.group} visible={!isolated} dispose={null} />;
+}
+
+const THERMAL_PART: Record<string, keyof HeatMap> = {
+  base: 'bench',
+  board: 'board',
+  cpu: 'cpu',
+  cooler: 'cooler',
+  gpu: 'gpu',
+  ram: 'ram',
+  ssd: 'ssd',
+  psu: 'psu',
+};
+
+function setThermalRange(material: ShaderMaterial, low: number, high: number) {
+  material.uniforms.uLow.value = low;
+  material.uniforms.uHigh.value = high;
+}
+
+/** False-colour "ironbow" palette used by thermal cameras, with simple shading to keep form. */
+function thermalMaterial() {
+  return new ShaderMaterial({
+    uniforms: {
+      uLow: { value: THERMAL_RANGE.min },
+      uHigh: { value: THERMAL_RANGE.min },
+      uYMin: { value: 0 },
+      uYMax: { value: 1 },
+      uRange: { value: [THERMAL_RANGE.min, THERMAL_RANGE.max] },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vWorld;
+      varying vec3 vNormal;
+      void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        vNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uLow;
+      uniform float uHigh;
+      uniform float uYMin;
+      uniform float uYMax;
+      uniform vec2 uRange;
+      varying vec3 vWorld;
+      varying vec3 vNormal;
+      vec3 ironbow(float t) {
+        vec3 c0 = vec3(0.03, 0.0, 0.12);
+        vec3 c1 = vec3(0.32, 0.02, 0.55);
+        vec3 c2 = vec3(0.78, 0.08, 0.42);
+        vec3 c3 = vec3(0.98, 0.38, 0.05);
+        vec3 c4 = vec3(1.0, 0.8, 0.18);
+        vec3 c5 = vec3(1.0, 0.98, 0.85);
+        float s = clamp(t, 0.0, 1.0) * 5.0;
+        if (s < 1.0) return mix(c0, c1, s);
+        if (s < 2.0) return mix(c1, c2, s - 1.0);
+        if (s < 3.0) return mix(c2, c3, s - 2.0);
+        if (s < 4.0) return mix(c3, c4, s - 3.0);
+        return mix(c4, c5, s - 4.0);
+      }
+      void main() {
+        float height = smoothstep(uYMin, uYMax, vWorld.y);
+        float temperature = mix(uLow, uHigh, height);
+        vec3 n = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
+        float shade = 0.7 + 0.3 * abs(dot(n, normalize(vec3(0.35, 1.0, -0.45))));
+        gl_FragColor = vec4(ironbow((temperature - uRange.x) / (uRange.y - uRange.x)) * shade, 1.0);
+      }`,
+    side: DoubleSide,
+  });
+}
+
+// Q-LED diagnostic column near the front edge by SYS_FAN, where the GPU does not hide it,
+// plus a standby light and the RJ45 link lights. Positions are in scene space.
+const QLEDS = [
+  { id: 'cpu', label: 'CPU', color: '#ff3b2f' },
+  { id: 'dram', label: 'DRAM', color: '#ffc21a' },
+  { id: 'vga', label: 'VGA', color: '#f4f7ff' },
+  { id: 'boot', label: 'BOOT', color: '#3dff6e' },
+  { id: 'stby', label: 'STBY', color: '#3dff6e' },
+] as const;
+const QLED_X = -2.3;
+const qledZ = (i: number) => -1.8 - i * 0.135;
+type LedState = 'off' | 'on' | 'blink';
+
+function silkscreenLabel(text: string) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  context.fillStyle = '#c9cfca';
+  context.font = '600 44px ui-monospace, Consolas, monospace';
+  context.textBaseline = 'middle';
+  context.fillText(text, 8, 34);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function glowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
+  gradient.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  return new CanvasTexture(canvas);
+}
+
+/** Motherboard status lights: the Q-LED column tells the POST story, RJ45 lights show activity. */
+function DiagnosticLeds({ build, mode, running, reduced, isolated, selected, idle, heat }: Props) {
+  const { invalidate } = useThree();
+  const bootStarted = useRef<number | null>(null);
+  const resources = useMemo(() => {
+    const glow = glowTexture();
+    return {
+      labels: QLEDS.map((led) => silkscreenLabel(led.label)),
+      glow,
+      lamps: [...QLEDS.map((led) => led.color), '#3dff6e', '#ffb020'].map(
+        (color) =>
+          new MeshStandardMaterial({
+            color: '#161a18',
+            emissive: new Color(color),
+            emissiveIntensity: 0,
+            roughness: 0.35,
+            toneMapped: false,
+          }),
+      ),
+      halos: [...QLEDS.map((led) => led.color), '#3dff6e', '#ffb020'].map(
+        (color) =>
+          new MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            map: glow,
+            blending: AdditiveBlending,
+            toneMapped: false,
+          }),
+      ),
+    };
+  }, []);
+  useEffect(
+    () => () => {
+      resources.labels.forEach((t) => t.dispose());
+      resources.glow.dispose();
+      [...resources.lamps, ...resources.halos].forEach((m) => m.dispose());
+    },
+    [resources],
+  );
+
+  const post = build?.post ?? 'none';
+  const powered = !build || build.power.atx;
+  const q: Record<(typeof QLEDS)[number]['id'], LedState> = {
+    cpu: post === 'eps' ? 'on' : 'off',
+    dram: 'off',
+    vga: post === 'pcie' ? 'on' : 'off',
+    boot: 'off',
+    stby: powered ? 'on' : 'off',
+  };
+  const systemUp = !build || post === 'ok' || post === 'paste' || post === 'fan';
+  const link: LedState = systemUp ? 'on' : 'off';
+  const activity: LedState =
+    !build && (running || mode === 'signal')
+      ? 'blink'
+      : build && (post === 'ok' || post === 'paste')
+        ? 'blink'
+        : 'off';
+  const booting = post === 'booting' && !!build?.power.atx;
+  const states: LedState[] = [q.cpu, q.dram, q.vga, q.boot, q.stby, link, activity];
+  const animated = !reduced && !idle && (booting || activity === 'blink');
+
+  useEffect(() => {
+    bootStarted.current = booting ? null : bootStarted.current;
+    invalidate();
+  }, [booting, post, invalidate]);
+
+  useFrame(({ clock }) => {
+    if (booting && bootStarted.current === null) bootStarted.current = clock.elapsedTime;
+    const step = booting ? Math.floor((clock.elapsedTime - (bootStarted.current ?? 0)) / 0.33) : -1;
+    states.forEach((state, i) => {
+      let lit =
+        state === 'on' ||
+        (state === 'blink' && (reduced || Math.sin(clock.elapsedTime * 18 + i) > 0.2));
+      if (booting && i < 4) lit = reduced ? i === 3 : Math.min(step, 3) === i;
+      const hidden = !!heat;
+      resources.lamps[i].emissiveIntensity = lit && !hidden ? 2.4 : 0;
+      resources.halos[i].opacity = lit && !hidden ? (i < 5 ? 0.85 : 0.6) : 0;
+    });
+    if (animated) invalidate();
+  });
+
+  if (isolated && selected !== 'board') return null;
+  const fault = post === 'eps' ? 'CPU' : post === 'pcie' ? 'VGA' : null;
+  return (
+    <group>
+      {QLEDS.map((led, i) => {
+        const z = qledZ(i);
+        return (
+          <group key={led.id}>
+            <mesh position={[QLED_X, 0.09, z]} material={resources.lamps[i]}>
+              <boxGeometry args={[0.1, 0.04, 0.06]} />
+            </mesh>
+            <mesh
+              position={[QLED_X, 0.12, z]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              material={resources.halos[i]}
+            >
+              <planeGeometry args={[0.32, 0.32]} />
+            </mesh>
+            <mesh position={[QLED_X + 0.17, 0.071, z]} rotation={[-Math.PI / 2, 0, Math.PI]}>
+              <planeGeometry args={[0.2, 0.05]} />
+              <meshBasicMaterial
+                map={resources.labels[i]}
+                transparent
+                toneMapped={false}
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
+        );
+      })}
+      {[1.72, 2.1].map((z, i) => (
+        <group key={z}>
+          <mesh position={[2.47, 0.66, z]} material={resources.lamps[5 + i]}>
+            <boxGeometry args={[0.014, 0.03, 0.06]} />
+          </mesh>
+          <mesh
+            position={[2.49, 0.66, z]}
+            rotation={[0, Math.PI / 2, 0]}
+            material={resources.halos[5 + i]}
+          >
+            <planeGeometry args={[0.2, 0.2]} />
+          </mesh>
+        </group>
+      ))}
+      {fault && (
+        <Html position={[QLED_X, 0.5, qledZ(1)]} center zIndexRange={[5, 0]}>
+          <span className="airflow-tag hot">● Q-LED {fault}</span>
+        </Html>
+      )}
+    </group>
+  );
 }
 
 function position(id: PartId, spread: number) {
@@ -581,7 +880,9 @@ function Airflow({ spread, airflow, temperature, reduced, running, mode, selecte
       </Html>
       <Html position={[2.15, TOWER.top + lift + 0.3, TOWER.z]} center zIndexRange={[4, 0]}>
         <span className={`airflow-tag exhaust ${hot ? 'hot' : ''}`}>
-          {mode === 'lab' ? `WYLOT · ${temperature}°C` : 'WYLOT · CIEPŁE'}
+          {mode === 'lab'
+            ? `WYLOT · ~${Math.round(24 + (temperature - 24) * 0.35)}°C`
+            : 'WYLOT · CIEPŁE'}
         </span>
       </Html>
     </group>
@@ -912,6 +1213,7 @@ export default function AtlasScene(props: Props) {
           <Environment files={ENV_URL} environmentIntensity={props.isolated ? 0.16 : 0.14} />
           <Model {...props} />
           <FlexibleHarness {...props} />
+          <DiagnosticLeds {...props} />
           <Flow {...props} />
           {props.build?.paste && (
             <mesh position={[0, 0.408, 1.1]}>

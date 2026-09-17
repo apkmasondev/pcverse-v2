@@ -15,13 +15,21 @@
 | Anatomia | Droga danych | Laboratorium |
 | --- | --- | --- |
 | <img src="docs/anatomy.webp" alt="Kanał anatomii z rozłożonym modelem i katalogiem części" /> | <img src="docs/signal.webp" alt="Etap renderowania: przepływ CPU → GPU na schemacie i w modelu" /> | <img src="docs/lab.webp" alt="Laboratorium z telemetrią, wskaźnikiem temperatury i dziennikiem pomiarów" /> |
-| Siedem podzespołów z kartami katalogowymi, podświetlaniem pod kursorem, widokiem rozłożonym i oglądaniem z bliska: przód, tył, góra, spód, złącza. | Cztery etapy od wczytania pliku z SSD po obraz na ekranie, z zasilaniem i ciepłem w tle. Na końcu test wiedzy. | Gra, render lub wiele aplikacji. Zmieniasz rozdzielczość, RAM i przepływ powietrza, a telemetria i dziennik pomiarów pokazują skutki. |
+| Siedem podzespołów z kartami katalogowymi, podświetlaniem pod kursorem, widokiem rozłożonym i oglądaniem z bliska: przód, tył, góra, spód, złącza. | Cztery etapy od wczytania pliku z SSD po obraz na ekranie, z zasilaniem i ciepłem w tle. Na końcu test wiedzy. | Gra, render lub wiele aplikacji. Zmieniasz rozdzielczość, RAM i przepływ powietrza, a telemetria, dziennik pomiarów i termowizja pokazują skutki. |
+
+### Termowizja
+
+<img src="docs/thermal.webp" alt="Termowizja w laboratorium: przy braku RAM dysk SSD świeci na pomarańczowo od pracy pliku wymiany" />
+
+Przełącznik termowizji (klawisz T) zamienia model w obraz z kamery termicznej, wyliczany z tego samego modelu co wyniki laboratorium. Karta nagrzewa się z rozdzielczością, wieża chłodzenia jest gorętsza przy podstawie niż na żeberkach i stygnie z przepływem powietrza, zasilacz grzeje się z pobieraną mocą, a przy braku RAM widać, jak pracujący plik wymiany rozgrzewa dysk SSD.
 
 ### Montaż
 
 <img src="docs/build.webp" alt="Tryb montażu: karta graficzna unosi się nad złączem PCIe, obok lista kontrolna i pytanie o wybór złącza" />
 
-Złóż komputer w kolejności serwisanta: procesor, pasta termoprzewodząca, chłodzenie, pamięć w gniazdach A2/B2, dysk M.2, karta w górnym złączu PCIe i cztery przewody zasilające. Każda część unosi się nad swoim gniazdem i opada po zamontowaniu, a w modelu pojawiają się tylko faktycznie podłączone przewody. Decyzje mają konsekwencje: pominięta pasta albo niepodłączony EPS wyjdą dopiero przy pierwszym uruchomieniu, z realistycznym objawem i diagnozą, np. „CPU Fan Error!” albo świecącą diodą CPU.
+Złóż komputer w kolejności serwisanta: procesor, pasta termoprzewodząca, chłodzenie, pamięć w gniazdach A2/B2, dysk M.2, karta w górnym złączu PCIe i cztery przewody zasilające. Każda część unosi się nad swoim gniazdem i opada po zamontowaniu, a w modelu pojawiają się tylko faktycznie podłączone przewody. Decyzje mają konsekwencje: pominięta pasta albo niepodłączony EPS wyjdą dopiero przy pierwszym uruchomieniu, z realistycznym objawem i diagnozą, np. „CPU Fan Error!”. Na płycie świecą prawdziwe diody diagnostyczne Q-LED: podczas testu zapalają się kolejno CPU, DRAM, VGA i BOOT, a przy usterce zostaje ta, na której start się zatrzymał.
+
+<img src="docs/post-led.webp" alt="Test po włączeniu bez wtyczki EPS: na płycie świeci czerwona dioda Q-LED CPU" />
 
 <table>
   <tr>

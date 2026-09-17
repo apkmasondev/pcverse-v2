@@ -17,6 +17,8 @@ export interface BuildView {
   pending: PartId | null;
   paste: boolean;
   power: Record<Connector, boolean>;
+  /** Power-on test: not started, running its LED sequence, passed, or the first fault found. */
+  post: 'none' | 'booting' | 'ok' | Connector | 'paste';
 }
 export interface BuildOption {
   label: string;

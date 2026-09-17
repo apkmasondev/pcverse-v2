@@ -9,6 +9,7 @@ interface Props {
   onChange: (state: BuildState) => void;
   onReset: () => void;
   onLab: () => void;
+  onBooting?: (booting: boolean) => void;
 }
 
 const bootLines = [
@@ -18,8 +19,12 @@ const bootLines = [
   'Szukanie karty graficznej',
 ];
 
-function PostResult({ state, reduced, onChange, onReset, onLab }: Props) {
+function PostResult({ state, reduced, onChange, onReset, onLab, onBooting }: Props) {
   const [booting, setBooting] = useState(!reduced);
+  useEffect(() => {
+    onBooting?.(booting);
+  }, [booting, onBooting]);
+  useEffect(() => () => onBooting?.(false), [onBooting]);
   useEffect(() => {
     if (!booting) return;
     const timer = window.setTimeout(() => setBooting(false), 1400);

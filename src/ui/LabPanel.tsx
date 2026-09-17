@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Power, RotateCcw } from 'lucide-react';
+import { Power, RotateCcw, Thermometer } from 'lucide-react';
 import { workloadHints, workloads } from '../atlas/content';
 import type { Workload } from '../atlas/content';
 
@@ -15,6 +15,8 @@ interface Props {
   onAirflow: (n: number) => void;
   onRun: () => void;
   onReset: () => void;
+  thermal: boolean;
+  onThermal: () => void;
 }
 
 function Segmented<T extends string | number>({
@@ -130,6 +132,16 @@ export default function LabPanel(props: Props) {
           <span>MAX</span>
         </div>
       </div>
+
+      <button
+        className="btn ghost wide thermal-toggle"
+        aria-pressed={props.thermal}
+        onClick={props.onThermal}
+      >
+        <Thermometer size={16} />
+        <span>{props.thermal ? 'Wyłącz termowizję' : 'Termowizja'}</span>
+        <kbd>T</kbd>
+      </button>
 
       <div className="lab-actions">
         <button

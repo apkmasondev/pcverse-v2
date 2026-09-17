@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { parts, steps } from './atlas/content';
 import type { Mode, PartId, Workload } from './atlas/content';
-import { simulate } from './atlas/simulation';
+import { heatMap, simulate } from './atlas/simulation';
 import HelpDialog from './atlas/HelpDialog';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { useMediaQuery } from './hooks/useMediaQuery';
@@ -33,7 +33,14 @@ import LabPanel from './ui/LabPanel';
 import Telemetry from './ui/Telemetry';
 import BuildPanel from './ui/BuildPanel';
 import BuildChecklist from './ui/BuildChecklist';
-import { buildSteps, initialBuild, installedParts, pendingPart } from './atlas/assembly';
+import {
+  buildSteps,
+  evaluatePost,
+  initialBuild,
+  installedParts,
+  pendingPart,
+  postStep,
+} from './atlas/assembly';
 import type { BuildState, BuildView } from './atlas/assembly';
 import type { Measurement } from './ui/Telemetry';
 import Schematic from './ui/Schematic';
@@ -116,6 +123,8 @@ export default function App() {
   const [booting, setBooting] = useState(() => !readBootFlag());
   const [toast, setToast] = useState(false);
   const [build, setBuild] = useState<BuildState>(initialBuild);
+  const [postBooting, setPostBooting] = useState(false);
+  const [thermal, setThermal] = useState(false);
   const [idle, setIdle] = useState(false);
   const [sceneNode, setSceneNode] = useState<HTMLDivElement | null>(null);
   const [onscreen, setOnscreen] = useState(true);
@@ -124,6 +133,15 @@ export default function App() {
   const [leftDock, leftWidth] = useWidth();
   const [rightDock, rightWidth] = useWidth();
   const result = simulate({ workload, resolution, memory, airflow, running });
+  const heat = useMemo(
+    () =>
+      mode === 'lab' && thermal
+        ? heatMap({ workload, resolution, memory, airflow, running }, result)
+        : null,
+    // `result` is derived from the same inputs listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, thermal, workload, resolution, memory, airflow, running],
+  );
   const motionOff = reduced || paused;
   const insets = desktop
     ? {
@@ -197,9 +215,15 @@ export default function App() {
             pending: pendingPart(build),
             paste: build.paste,
             power: build.power,
+            post:
+              build.step !== postStep
+                ? 'none'
+                : postBooting
+                  ? 'booting'
+                  : (evaluatePost(build)[0]?.id ?? 'ok'),
           }
         : null,
-    [mode, build],
+    [mode, build, postBooting],
   );
 
   const fallback = useCallback(() => setFlat(true), []);
@@ -313,6 +337,9 @@ export default function App() {
         return switchMode('signal');
       case 'l':
         return switchMode('lab');
+      case 't':
+        if (mode === 'lab') setThermal((v) => !v);
+        return;
       case 'm':
         return switchMode('build');
       case '?':
@@ -472,6 +499,7 @@ export default function App() {
                   idle={idle}
                   onscreen={onscreen}
                   build={buildView}
+                  heat={heat}
                 />
               </Suspense>
             </SceneBoundary>
@@ -491,6 +519,18 @@ export default function App() {
           </span>
           <span className="coords">SKALA UMOWNA · EKSPONAT DYDAKTYCZNY</span>
         </div>
+        {heat && (
+          <div
+            className="thermal-legend"
+            aria-label="Skala termowizji od 25 do 85 stopni Celsjusza"
+          >
+            <span>TERMOWIZJA · SYMULACJA</span>
+            <i />
+            <b>25°C</b>
+            <b>55°C</b>
+            <b>85°C+</b>
+          </div>
+        )}
 
         <section
           className="dock dock-left"
@@ -530,6 +570,8 @@ export default function App() {
               onAirflow={setAirflow}
               onRun={() => setRunning((v) => !v)}
               onReset={resetExperiment}
+              thermal={thermal}
+              onThermal={() => setThermal((v) => !v)}
             />
           )}
           {mode === 'build' && (
@@ -539,6 +581,7 @@ export default function App() {
               onChange={setBuild}
               onReset={() => setBuild(initialBuild)}
               onLab={() => switchMode('lab')}
+              onBooting={setPostBooting}
             />
           )}
         </section>

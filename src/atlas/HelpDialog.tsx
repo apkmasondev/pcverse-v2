@@ -9,6 +9,7 @@ const shortcuts: [string[], string][] = [
   [['F'], 'Obejrzyj wybraną część z bliska'],
   [['R'], 'Resetuj kamerę'],
   [['Spacja'], 'Uruchom lub zatrzymaj zadanie w laboratorium'],
+  [['T'], 'Termowizja w laboratorium'],
   [['Esc'], 'Wróć do całego komputera'],
   [['?'], 'Ta instrukcja'],
 ];

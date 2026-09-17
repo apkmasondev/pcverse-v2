@@ -64,3 +64,44 @@ export function simulate({ workload, resolution, memory, airflow, running }: Set
     demand,
   };
 }
+
+/** Surface temperature of one exhibit part: `low` at its base, `high` at its top. */
+export interface PartHeat {
+  low: number;
+  high: number;
+}
+export type HeatMap = Record<
+  'cpu' | 'cooler' | 'gpu' | 'ram' | 'board' | 'ssd' | 'psu' | 'cables' | 'bench',
+  PartHeat
+>;
+export const THERMAL_RANGE = { min: 25, max: 85 };
+
+/** Illustrative thermal-camera view derived from the same teaching model as the lab results. */
+export function heatMap(setup: Setup, result: ReturnType<typeof simulate>): HeatMap {
+  const ambient = 24;
+  const even = (t: number): PartHeat => ({ low: t, high: t });
+  const cpu = result.temperature;
+  // Heat spreads up the heatpipes; stronger airflow cools the fin stack more than the base.
+  const fins = ambient + (cpu - ambient) * (0.55 - setup.airflow * 0.003);
+  const gpuCore = 30 + result.gpu * 0.5;
+  return {
+    cpu: even(cpu),
+    cooler: { low: cpu - 6, high: Math.round(fins) },
+    gpu: { low: gpuCore - 6, high: gpuCore },
+    // Modules warm with memory traffic and even more when the system runs out of RAM.
+    ram: even(34 + result.cpu * 0.12 + (setup.running ? 6 : 0) + result.pressure * 14),
+    // Power stages around the socket run hotter than the rest of the board.
+    board: { low: 32 + result.cpu * 0.18, high: 30 + result.cpu * 0.08 },
+    // NVMe controllers heat up under I/O; swapping when RAM runs out keeps them busy.
+    ssd: even(
+      36 +
+        (setup.running ? 8 : 0) +
+        result.pressure * 28 +
+        (setup.running && setup.workload === 'tabs' ? 4 : 0),
+    ),
+    // Conversion losses grow with the power drawn by the components.
+    psu: { low: 32 + result.watts * 0.05, high: 30 + result.watts * 0.04 },
+    cables: even(ambient + 3),
+    bench: even(ambient),
+  };
+}

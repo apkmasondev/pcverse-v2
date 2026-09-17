@@ -53,3 +53,23 @@ test('all offered configurations are finite, bounded and below PSU rating', () =
           );
         }
 });
+test('thermal view follows the lab model', async () => {
+  const { heatMap } = await import('../src/atlas/simulation.ts');
+  const view = (setup) => heatMap(setup, simulate(setup));
+  const running = view(base),
+    idle = view({ ...base, running: false });
+  assert.ok(running.cpu.high > idle.cpu.high, 'a running task heats the CPU');
+  assert.ok(running.gpu.high > idle.gpu.high, 'a running game heats the GPU');
+  const stillAir = view({ ...base, airflow: 0 }),
+    strongAir = view({ ...base, airflow: 100 });
+  assert.ok(stillAir.cooler.high > strongAir.cooler.high, 'airflow cools the fin stack');
+  assert.ok(running.cooler.low > running.cooler.high, 'the base is hotter than the fins');
+  const swapping = view({ ...base, workload: 'tabs', memory: 8 });
+  assert.ok(swapping.ssd.high > running.ssd.high, 'RAM shortage keeps the SSD busy');
+  assert.ok(running.ram.high > idle.ram.high + 8, 'working memory warms up');
+  assert.ok(running.ssd.high > idle.ssd.high + 5, 'the SSD warms under I/O');
+  assert.ok(running.psu.low > idle.psu.low + 5, 'the PSU warms with the power it delivers');
+  assert.ok(swapping.ram.high > running.ram.high, 'a full RAM runs hotter');
+  for (const part of Object.values(stillAir))
+    assert.ok(part.low >= 20 && part.high <= 100, 'within the thermal scale');
+});

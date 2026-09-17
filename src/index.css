@@ -1822,6 +1822,67 @@ code {
   border-style: dashed;
 }
 
+/* ───────────────────────── Thermal camera ───────────────────────── */
+.thermal-legend {
+  position: absolute;
+  z-index: 3;
+  top: 44px;
+  right: calc(var(--inset-right) + 40px);
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: space-between;
+  gap: 6px 0;
+  width: 220px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font: 500 9.5px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  pointer-events: none;
+  animation: panel-in 0.35s var(--ease) both;
+}
+.thermal-legend span {
+  grid-column: 1 / -1;
+  color: var(--amber);
+}
+.thermal-legend i {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgb(8, 0, 31),
+    rgb(82, 5, 140),
+    rgb(199, 20, 107),
+    rgb(250, 97, 13),
+    rgb(255, 204, 46),
+    rgb(255, 250, 217)
+  );
+}
+.thermal-legend b {
+  font-weight: 500;
+  color: var(--text-2);
+}
+.thermal-legend b:nth-of-type(2) {
+  text-align: center;
+}
+.thermal-legend b:last-of-type {
+  text-align: right;
+}
+.btn.ghost.thermal-toggle[aria-pressed='true'] {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: rgba(255, 193, 77, 0.08);
+}
+@media (max-width: 1023px) {
+  .thermal-legend {
+    top: 12px;
+    right: 24px;
+  }
+}
+
 /* ───────────────────────── Rail & status ───────────────────────── */
 .rail {
   position: relative;
