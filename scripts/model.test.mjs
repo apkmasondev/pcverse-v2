@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
-import { Box3, Matrix4, Vector3 } from 'three';
+import { Box3, Matrix4, Ray, Vector3 } from 'three';
 import { harnessCurve } from '../src/atlas/harness.ts';
 
 // Reads the shipped, meshopt-compressed model exactly as the browser receives it.
@@ -36,6 +36,204 @@ function worldVertices(node, materialName) {
 }
 const primitives = root.listMeshes().flatMap((mesh) => mesh.listPrimitives());
 const triangles = primitives.reduce((n, p) => n + p.getIndices().getCount() / 3, 0);
+
+// Ray tests inspect the shipped mesh, including Boolean cuts, rather than relying
+// on source names or metadata that could survive a broken export.
+function meshTriangles(name, stationaryOnly = false, materialName) {
+  const faces = [];
+  function visit(node, rotating = false) {
+    rotating ||= !!node.getExtras().rotorAxis;
+    if (stationaryOnly && rotating) return;
+    const matrix = new Matrix4().fromArray(node.getWorldMatrix());
+    for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+      if (materialName && primitive.getMaterial()?.getName() !== materialName) continue;
+      const positions = primitive.getAttribute('POSITION');
+      const indices = primitive.getIndices();
+      const vertices = Array.from({ length: positions.getCount() }, (_, i) =>
+        new Vector3(...positions.getElement(i, [])).applyMatrix4(matrix),
+      );
+      for (let i = 0; i < indices.getCount(); i += 3)
+        faces.push([
+          vertices[indices.getScalar(i)],
+          vertices[indices.getScalar(i + 1)],
+          vertices[indices.getScalar(i + 2)],
+        ]);
+    }
+    node.listChildren().forEach((child) => visit(child, rotating));
+  }
+  visit(roots.find((n) => n.getName() === name));
+  return faces;
+}
+function blocked(faces, from, to) {
+  const distance = from.distanceTo(to);
+  const ray = new Ray(from, to.clone().sub(from).normalize());
+  const hit = new Vector3();
+  return faces.some(
+    ([a, b, c]) => ray.intersectTriangle(a, b, c, false, hit) && from.distanceTo(hit) < distance,
+  );
+}
+const boardPoint = ([x, y, z]) => new Vector3(-x, z, y);
+
+test('EPS comb surrounds the actual curved cable bundle instead of floating beside it', () => {
+  const faces = meshTriangles('wiringEps', false, 'Woven cable sheath');
+  const section = [];
+  for (const face of faces)
+    for (let edge = 0; edge < 3; edge++) {
+      const a = face[edge],
+        b = face[(edge + 1) % 3];
+      if ((a.x + 1.7) * (b.x + 1.7) < 0) {
+        section.push(a.clone().lerp(b, (-1.7 - a.x) / (b.x - a.x)));
+      }
+    }
+  assert.ok(section.length >= 64, 'read cross-section of exported cable sleeves');
+  const wireBox = new Box3().setFromPoints(section);
+  const combBox = new Box3().setFromPoints(
+    worldVertices(
+      roots.find((node) => node.getName() === 'wiringEps'),
+      'Graphite enamel',
+    ),
+  );
+  assert.ok(
+    combBox.getCenter(new Vector3()).distanceTo(wireBox.getCenter(new Vector3())) < 0.012,
+    'comb is centered on the eight wires',
+  );
+  assert.ok(
+    combBox.clone().expandByScalar(0.003).containsBox(wireBox),
+    'every wire passes inside the comb envelope',
+  );
+});
+
+test('SSD surface-mounted devices and solder terminations meet the laminate', () => {
+  const ssd = roots.find((node) => node.getName() === 'ssd');
+  const bodies = worldVertices(ssd, 'Ceramic capacitor body');
+  const solder = worldVertices(ssd, 'Brushed aluminium');
+  const chips = worldVertices(ssd, 'Moulded silicon packages');
+  for (const [x, halfWidth] of [
+    [-0.72, 0.201],
+    [-0.22, 0.201],
+    [0.24, 0.141],
+  ]) {
+    const topPackage = chips.filter((p) => Math.abs(p.x + x) < halfWidth && p.y > 0.2);
+    assert.ok(topPackage.length >= 8);
+    const bottom = Math.min(...topPackage.map((p) => p.y));
+    assert.ok(bottom >= 0.21 && bottom <= 0.212, `NAND/controller sits on the PCB: ${bottom}`);
+  }
+  for (const x of [-0.89, -0.61, -0.32, -0.03, 0.24, 0.47]) {
+    for (const y of [-1.635, -1.22]) {
+      const inFootprint = (p) => Math.abs(p.x + x) < 0.04 && Math.abs(p.z - y) < 0.02;
+      for (const [label, vertices] of [
+        ['body', bodies],
+        ['solder', solder],
+      ]) {
+        const local = vertices.filter(inFootprint);
+        assert.ok(local.length >= 8, `SSD ${label} at ${x},${y}`);
+        const bottom = Math.min(...local.map((p) => p.y));
+        assert.ok(
+          bottom >= 0.21 && bottom <= 0.213,
+          `SSD ${label} must touch the 0.211 laminate surface: ${bottom}`,
+        );
+      }
+    }
+  }
+  const material = root.listMaterials().find((m) => m.getName() === 'NVMe solder mask');
+  assert.ok(material?.getBaseColorTexture(), 'SSD has independent circuit artwork');
+  assert.notEqual(
+    material.getBaseColorTexture(),
+    root
+      .listMaterials()
+      .find((m) => m.getName() === 'Motherboard silkscreen')
+      .getBaseColorTexture(),
+  );
+});
+
+test('fan passages are open behind the blades, with different rotor profiles', () => {
+  const counts = root
+    .listNodes()
+    .filter((n) => n.getExtras().rotorAxis && n.listChildren().length)
+    .map((n) => n.getExtras().bladeCount)
+    .sort((a, b) => a - b);
+  assert.deepEqual(counts, [7, 9, 11, 11, 11]);
+  const fans = [
+    ['gpu', [-1.52, -1.245, 1.45], 0.84, 'Y'],
+    ['gpu', [0.35, -1.245, 1.45], 0.84, 'Y'],
+    ['gpu', [2.22, -1.245, 1.45], 0.84, 'Y'],
+    ['cooler', [0.5, 1.1, 1.66], 0.67, 'X'],
+    ['psu', [-4.22, 0.35, 1.51], 1.05, 'Z'],
+  ];
+  for (const [name, [x, y, z], radius, axis] of fans) {
+    const faces = meshTriangles(name, true);
+    let open = 0;
+    for (let i = 0; i < 16; i++) {
+      const a = (i * Math.PI) / 8 + 0.12;
+      const u = Math.cos(a) * radius * 0.62,
+        v = Math.sin(a) * radius * 0.62;
+      const point = (depth) => {
+        const p =
+          axis === 'X'
+            ? [x + depth, y + u, z + v]
+            : axis === 'Y'
+              ? [x + u, y - depth, z + v]
+              : [x + u, y + v, z + depth];
+        return name === 'psu' ? new Vector3(p[0] - 0.75, p[2], -p[1]) : boardPoint(p);
+      };
+      if (!blocked(faces, point(0.02), point(-0.073))) open++;
+    }
+    assert.ok(open >= 10, `${name} fan at ${x}: ${open}/16 unobstructed samples`);
+  }
+});
+
+test('RAM and PCIe key notches are physically cut out and surrounding contacts remain', () => {
+  const gpu = meshTriangles('gpu');
+  for (const [x, expected] of [
+    [-0.93, false],
+    [-1.08, true],
+    [-0.78, true],
+  ])
+    assert.equal(
+      blocked(gpu, boardPoint([x, -1.2, 0.22]), boardPoint([x, 0.1, 0.22])),
+      expected,
+      `PCIe at ${x}`,
+    );
+  const ram = meshTriangles('ram');
+  for (const x of [1.58, 2.04]) {
+    for (const [y, expected] of [
+      [1.05, false],
+      [0.9, true],
+      [1.2, true],
+    ])
+      assert.equal(
+        blocked(ram, boardPoint([x - 0.1, y, 0.245]), boardPoint([x + 0.1, y, 0.245])),
+        expected,
+        `DIMM ${x}, key ${y}`,
+      );
+  }
+});
+
+test('CPU_FAN and SYS_FAN have four pins in a single row', () => {
+  const points = worldVertices(
+    roots.find((n) => n.getName() === 'board'),
+    'Copper contacts',
+  ).map((p) => [-p.x, p.z, p.y]);
+  for (const [x, y] of [
+    [0.72, 2.43],
+    [2.22, -2.53],
+  ]) {
+    const pins = points.filter(
+      (p) => Math.abs(p[0] - x) < 0.18 && Math.abs(p[1] - y) < 0.08 && p[2] > 0.16 && p[2] < 0.32,
+    );
+    assert.ok(pins.length > 16);
+    assert.ok(
+      Math.max(...pins.map((p) => p[1])) - Math.min(...pins.map((p) => p[1])) < 0.03,
+      'one row',
+    );
+    const positions = pins.map((p) => p[0]).sort((a, b) => a - b);
+    assert.equal(
+      1 + positions.slice(1).filter((p, i) => p - positions[i] > 0.04).length,
+      4,
+      'four separate pins',
+    );
+  }
+});
 
 test('all selectable assemblies and fixed wiring survive export', () => {
   for (const name of [
@@ -170,6 +368,8 @@ test('manufactured surfaces export usable normal and roughness maps', () => {
     'Fan satin polymer',
     'Woven cable sheath',
     'GPU machined metal',
+    'PCVerse powder coated PSU',
+    'NVMe solder mask',
   ]) {
     const material = root.listMaterials().find((m) => m.getName() === name);
     assert.ok(material?.getNormalTexture(), name + ' normal');
@@ -178,10 +378,60 @@ test('manufactured surfaces export usable normal and roughness maps', () => {
   }
 });
 
+test('board contact occlusion and physical-scale microstructure UVs survive export', () => {
+  const board = root.listMaterials().find((m) => m.getName() === 'Motherboard silkscreen');
+  assert.ok(board.getOcclusionTexture(), 'separate contact occlusion, not painted into albedo');
+  assert.match(
+    board.getBaseColorTexture().getName(),
+    /pcb-laminate-v4/,
+    'the detailed etched laminate is shipped, not the sparse replacement',
+  );
+  assert.notEqual(
+    board.getNormalTextureInfo().getTexCoord(),
+    board.getBaseColorTextureInfo().getTexCoord(),
+    'micrograin has independent UV scale',
+  );
+  const info = board.getNormalTextureInfo();
+  const artworkInfo = board.getBaseColorTextureInfo();
+  const artworkTransform = artworkInfo.getExtension('KHR_texture_transform');
+  const transform = info.getExtension('KHR_texture_transform');
+  assert.ok(transform, 'repeating microstructure retains its sampler transform');
+  const offset = transform.getOffset(),
+    scale = transform.getScale();
+  const surface = root
+    .listNodes()
+    .find((node) => node.getName() === 'board_Motherboard silkscreen');
+  const matrix = new Matrix4().fromArray(surface.getWorldMatrix());
+  for (const primitive of surface.getMesh().listPrimitives()) {
+    const positions = primitive.getAttribute('POSITION');
+    const uv = primitive.getAttribute(`TEXCOORD_${info.getTexCoord()}`);
+    const artworkUV = primitive.getAttribute(`TEXCOORD_${artworkInfo.getTexCoord()}`);
+    assert.equal(uv.getComponentType(), 5123, 'UVs use compact unsigned shorts');
+    for (let i = 0; i < positions.getCount(); i++) {
+      const p = new Vector3(...positions.getElement(i, [])).applyMatrix4(matrix);
+      const coords = uv.getElement(i, []).map((v, axis) => v * scale[axis] + offset[axis]);
+      assert.ok(
+        Math.abs(coords[0] + p.x) < 0.004 && Math.abs(coords[1] - (1 - p.z)) < 0.004,
+        'compression preserves one microstructure tile per model unit',
+      );
+      const artwork = artworkUV
+        .getElement(i, [])
+        .map(
+          (v, axis) => v * artworkTransform.getScale()[axis] + artworkTransform.getOffset()[axis],
+        );
+      assert.ok(
+        Math.abs(artwork[0] - (2.44 - p.x) / 4.88) < 0.001 &&
+          Math.abs(artwork[1] - (3.05 - p.z) / 6.1) < 0.001,
+        'the complete circuit image spans the motherboard once',
+      );
+    }
+  }
+});
+
 test('the shipped model is compressed and within realtime budgets', () => {
   assert.ok(root.listExtensionsUsed().some((e) => e.extensionName === 'EXT_meshopt_compression'));
-  assert.ok(triangles < 215_000, `static geometry: ${triangles}`);
-  assert.ok(bytes < 5_000_000, `GLB bytes: ${bytes}`);
+  assert.ok(triangles < 235_000, `static geometry: ${triangles}`);
+  assert.ok(bytes < 5_300_000, `GLB bytes: ${bytes}`);
   const wireTriangles = root
     .listMeshes()
     .filter((m) => m.getName().includes('sleeved wire'))

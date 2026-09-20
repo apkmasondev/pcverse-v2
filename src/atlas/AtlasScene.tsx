@@ -176,15 +176,20 @@ function Model(props: Props) {
         const swap = (m: MeshStandardMaterial) => {
           if (!copies.has(m)) {
             const copy = m.clone();
-            for (const map of [copy.map, copy.normalMap, copy.roughnessMap]) {
+            for (const map of [copy.map, copy.normalMap, copy.roughnessMap, copy.aoMap]) {
               if (map) map.anisotropy = 8;
             }
             if (copy.name === 'Motherboard silkscreen') {
-              copy.color.setRGB(0.7, 0.8, 0.74);
+              copy.color.setRGB(0.9, 0.95, 0.92);
               copy.metalness = 0;
-              copy.roughness = 1;
+              copy.roughness = 1; // The tiled roughness map supplies the coating response.
               copy.normalScale.set(0.25, 0.25);
-              copy.envMapIntensity = 0.3;
+              copy.envMapIntensity = 0.35;
+              copy.aoMapIntensity = 0.8;
+            }
+            if (copy.name === 'PCVerse powder coated PSU') {
+              copy.color.setRGB(0.5, 0.53, 0.56);
+              copy.envMapIntensity = 0.7;
             }
             if (copy.name === 'Moulded silicon packages') {
               copy.color.multiplyScalar(0.35);

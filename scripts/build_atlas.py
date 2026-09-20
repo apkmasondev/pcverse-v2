@@ -13,13 +13,13 @@ def material(name, color, metal=0, rough=.45):
     p=m.node_tree.nodes.get('Principled BSDF'); p.inputs['Base Color'].default_value=(*color,1)
     p.inputs['Metallic'].default_value=metal; p.inputs['Roughness'].default_value=rough
     return m
-navy=material('Graphite enamel',(.025,.032,.035),.35)
-pcb=material('Midnight PCB',(.035,.095,.09),.2)
-silver=material('Brushed aluminium',(.48,.55,.57),.8,.3)
+navy=material('Graphite enamel',(.025,.032,.035),.12,.48)
+pcb=material('Midnight PCB',(.022,.050,.035),0,.43)
+silver=material('Brushed aluminium',(.48,.55,.57),.92,.31)
 # Perforated panels are the same painted steel as the shell, just bare enough to catch light.
 steel=material('Perforated steel',(.125,.138,.148),.62,.33)
-black=material('Ceramic',(.019,.026,.03),.2)
-nylon=material('Fan satin polymer',(.012,.015,.018),.05,.32)
+black=material('Ceramic',(.019,.026,.03),0,.52)
+nylon=material('Fan satin polymer',(.018,.021,.024),0,.44)
 sleeve=material('Woven cable sheath',(.009,.012,.014),0,.82)
 contact=material('Socket gold alloy',(.52,.35,.12),.75,.4)
 orange=material('Safety orange',(.95,.20,.035),.25)
@@ -111,7 +111,7 @@ def surface(name, vertices, mat, uv=None):
 def top(name,x,y,z,w,h,mat):
     return surface(name,[(x-w/2,y-h/2,z),(x+w/2,y-h/2,z),(x+w/2,y+h/2,z),(x-w/2,y+h/2,z)],mat)
 
-def fan(name,center,r,front=False,axis=None):
+def fan(name,center,r,front=False,axis=None,blades=9,sweep=.60,chord=.70):
     # One geometric impeller: no photograph of another fan under the blades.
     # axis is the rotation axis in Blender space; blades pitch towards the outer face.
     axis=axis or ('Y' if front else 'Z')
@@ -124,15 +124,20 @@ def fan(name,center,r,front=False,axis=None):
         if axis=='Y':o.rotation_euler.x=math.pi/2
         elif axis=='X':o.rotation_euler.y=math.pi/2
         return o
-    orient(cyl(name+' cavity',center,r,.035,black,48))
+    # Open air passage: only the motor and four stationary struts sit behind
+    # the rotor. No opaque disc masking the heatsink or the PSU interior.
+    orient(cyl(name+' stationary motor',place(0,0,-.043),r*.20,.045,black,24))
+    for i in range(4):
+        a=i*math.tau/4+math.pi/4
+        tube(name+' motor strut',[place(r*t*math.cos(a+.1*t),r*t*math.sin(a+.1*t),-.066) for t in [.16,.5,.99]],.017,nylon)
     orient(ring(name+' inlet rim',place(0,0,.015),r,.023,navy))
     rotor_start=len(groups[part])
-    for i in range(9):
-        a=i*math.tau/9; verts=[]; faces=[]
+    for i in range(blades):
+        a=i*math.tau/blades; verts=[]; faces=[]
         for j in range(11):
             t=j/10; rr=r*(.23+.72*t)
             for k in range(5):
-                u=k/4; ang=a+.60*t+(u-.5)*(.85-.28*t)
+                u=k/4; ang=a+sweep*t+(u-.5)*(chord-.20*t)
                 pitch=.04+(.08*u-.02)*math.sin(t*math.pi*.8)
                 verts.append(place(rr*math.cos(ang),rr*math.sin(ang),pitch))
         for j in range(10):
@@ -147,10 +152,13 @@ def fan(name,center,r,front=False,axis=None):
     orient(cyl(name+' badge',place(0,0,.09),r*.12,.012,silver,24))
     for o in groups[part][rotor_start:]:
         o['rotor']=name+str(center); o['pivot']=center; o['rotorAxis']={'Z':'y','Y':'z','X':'x'}[axis]
+        o['bladeCount']=blades
 
-mb= textured('Motherboard silkscreen','art/textures/pcb-laminate-v4.png',.12,.68)
-pt= textured('PCVerse powder coated PSU','art/textures/psu-side-v2.png',.25,.6)
-gf= textured('GPU machined metal','art/textures/gpu-metal-v3.png',.5,.42)
+exec(compile(open(os.path.join(ROOT,'scripts','atlas_surfaces.py'),encoding='utf-8').read(),'atlas_surfaces.py','exec'))
+mb=board_material()
+st=textured('NVMe solder mask','art/textures/ssd-pcb-v6.png',0,.66)
+pt=textured('PCVerse powder coated PSU','art/textures/powder-coat-v5.png',.12,.58)
+gf=material('GPU machined metal',(.055,.065,.073),.86,.34)
 ct= textured('CPU laser etching','art/textures/cpu-ihs-v3.png',.55,.4)
 rt= textured('PCVerse memory spreader','art/textures/ram-side-v2.png',.45,.4)
 part='base'
@@ -191,9 +199,11 @@ tube('Socket lever',[(.73,.3,.26),(.73,1.8,.26),(.65,1.9,.27)],.025,silver)
 for y in [-.57,-1.95]:
     box('PCIe outer slot',(-.15,y,.16),(2.8,.18,.19),silver,.01)
     box('PCIe groove',(-.15,y,.255),(2.64,.07,.01),black,0)
+    box('PCIe slot key',(-.93,y,.246),(.080,.09,.07),black,.003)
     box('PCIe latch',(1.33,y,.24),(.19,.24,.18),black)
 for x in [1.35,1.58,1.81,2.04]:
     box('DIMM slot',(x,1.25,.17),(.13,2.9,.2),black,.008)
+    box('DIMM slot key',(x,1.05,.255),(.11,.10,.065),black,.003)
     for y in [-.24,2.74]:box('DIMM retaining clip',(x,y,.25),(.16,.16,.22),silver,.015)
 for x in [-1.85,-1.65,-1.45,-1.25,-1.05,-.85,-.65,-.45]:
     box('VRM fin',(x,2.40,.36),(.08,.45,.55),navy,.009)
@@ -229,7 +239,7 @@ for x in [-.82,.82]:cyl('Bridge post',(x,1.1,.57),.04,.13,silver,16)
 fan_x=fin_edge+.13
 cpu_frame=box('Fan frame',(fan_x,1.1,1.66),(.22,1.5,1.5),navy,.04)
 drill(cpu_frame,(fan_x,1.1,1.66),.7,.5,axis='X')
-fan('CPU fan',(fan_x,1.1,1.66),.67,axis='X')
+fan('CPU fan',(fan_x,1.1,1.66),.67,axis='X',blades=7,sweep=.37,chord=.86)
 for y in [.43,1.77]:
     for z in [.99,2.33]:
         o=cyl('Fan anti-vibration pad',(fan_x+.117,y,z),.045,.018,black,16);o.rotation_euler.y=math.pi/2
@@ -238,7 +248,8 @@ for y in [.43,1.77]:
 box('Fan cable outlet',(fan_x,1.87,.98),(.1,.07,.08),black,.01)
 part='ram'
 for x in [1.58,2.04]:
-    box('Memory PCB',(x,1.25,.61),(.06,2.68,.80),pcb,.008)
+    memory=box('Memory PCB',(x,1.25,.61),(.06,2.68,.80),pcb,.008)
+    cut(memory,(x,1.05,.235),(.14,.13,.15))
     box('RAM heat spreader',(x,1.25,.75),(.12,2.68,.64),navy,.025)
     for side in [-1,1]:
         xx=x+side*.062
@@ -246,7 +257,7 @@ for x in [1.58,2.04]:
     box('Copper top trim',(x,1.25,1.08),(.135,2.64,.028),gold,.007)
     for i in range(42):
         yy=-.035+i*.062
-        if abs(yy-1.05)>.045:box('RAM contact',(x,yy,.245),(.065,.036,.10),gold,.001)
+        if abs(yy-1.05)>.086:box('RAM contact',(x,yy,.245),(.065,.036,.10),gold,.001)
 part='gpu'
 # Card plane XZ is perpendicular to motherboard XY. PCIe fingers seat at Z=.21.
 box('GPU PCB',(.35,-.57,1.42),(5.6,.06,2.15),pcb,.015)
@@ -254,14 +265,14 @@ back=box('Backplate',(.35,-.515,1.48),(5.6,.045,2.08),gf,.03)
 project_gpu_uv(back)
 for x in [-2.26,-.5,1.25,2.98]:
     for z in [.59,2.35]:
-        o=cyl('Backplate screw',(x,-.48,z),.04,.025,silver,16);o.rotation_euler.x=math.pi/2
+        o=cyl('Backplate screw',(x,-.492,z),.04,.020,silver,16);o.rotation_euler.x=math.pi/2
 box('GPU heatsink contact plate',(.35,-.665,1.45),(5.5,.08,2.04),silver,.015)
-for i in range(58):box('GPU cooling fin',(-2.35+i*.094,-.94,1.45),(.026,.50,1.99),silver,.003)
+for i in range(58):box('GPU cooling fin',(-2.35+i*.094,-.94,1.45),(.026,.44,1.99),silver,.003)
 shroud=box('GPU machined fan frame',(.35,-1.21,1.45),(5.62,.15,2.13),gf,.045)
 fan_centers=[-1.52,.35,2.22]
 for x in fan_centers:
     drill(shroud,(x,-1.21,1.45),.867,.7)
-    fan('GPU fan',(x,-1.245,1.45),.84,True)
+    fan('GPU fan',(x,-1.245,1.45),.84,True,blades=11,sweep=.68,chord=.59)
 project_gpu_uv(shroud)
 for x in [-2.30,-.59,1.29,3.0]:
     for z in [.53,2.37]:
@@ -272,10 +283,11 @@ text('P C V E R S E',(-1.36,-1.00,2.571),.19,white)
 for x in [-1.65,-.8,.15,.95,2.4]:
     cable('GPU copper heatpipe',[(x,-1.08,.52),(x,-.95,.40),(x,-.73,.51),(x,-.72,2.42)],.033,gold)
 # PCIe key interrupts the contacts; only the connector enters the slot.
-box('PCIe connector substrate',(-.15,-.57,.285),(2.54,.062,.27),pcb,.004)
+connector=box('PCIe connector substrate',(-.15,-.57,.285),(2.54,.062,.27),pcb,.004)
+cut(connector,(-.93,-.57,.205),(.105,.15,.19))
 for i in range(42):
     x=-1.38+i*.06
-    if abs(x+.93)>.035:box('PCIe gold finger',(x,-.57,.245),(.035,.068,.14),gold,.001)
+    if abs(x+.93)>.075:box('PCIe gold finger',(x,-.57,.245),(.035,.068,.14),gold,.001)
 box('Rear expansion bracket',(-2.50,-.9,1.41),(.065,.85,2.42),silver,.015)
 for z in [.65,1.1,1.55,2.0]:box('Display output',(-2.54,-.91,z),(.045,.15,.34),black,.012)
 for x in [1.46,1.88]:
@@ -287,17 +299,23 @@ for x in [1.46,1.88]:
     box('GPU plug latch',(x,-.59,2.56),(.12,.07,.09),nylon,.012)
 part='ssd'
 box('NVMe PCB',(-.2,-1.43,.18),(1.78,.48,.055),pcb,.008)
-surface('SSD solder mask',[(-1.09,-1.67,.211),(.69,-1.67,.211),(.69,-1.19,.211),(-1.09,-1.19,.211)],mb,[(.2,.2),(.56,.2),(.56,.28),(.2,.28)])
+surface('SSD solder mask',[(-1.09,-1.67,.211),(.69,-1.67,.211),(.69,-1.19,.211),(-1.09,-1.19,.211)],st,[(0,0),(.972,0),(.972,1),(0,1)])
 part='board'
 box('M2 socket',(.74,-1.43,.20),(.12,.51,.13),black)
 part='ssd'
 cyl('M2 securing screw',(-1.04,-1.43,.23),.055,.035,silver,16)
 part='psu'
-psu_shell=box('PSU steel enclosure',(-4.22,.35,.72),(2.6,3.0,1.8),navy,.07)
+psu_shell=box('PSU steel enclosure',(-4.22,.35,.72),(2.6,3.0,1.8),pt,.04)
+cut(psu_shell,(-4.22,.35,.72),(2.46,2.86,1.66))
 drill(psu_shell,(-4.22,.35,1.64),1.06,.35,axis='Z')
-surface('PSU side label',[(-5.5,-1.153,-.15),(-2.94,-1.153,-.15),(-2.94,-1.153,1.59),(-5.5,-1.153,1.59)],pt)
-surface('PSU side label',[(-2.94,1.853,-.15),(-5.5,1.853,-.15),(-5.5,1.853,1.59),(-2.94,1.853,1.59)],pt)
-fan('PSU fan',(-4.22,.35,1.51),1.05)
+fan('PSU fan',(-4.22,.35,1.51),1.05,blades=9,sweep=.46,chord=.73)
+# Interior is visible through the fan, but stays recessed behind the electronics.
+box('PSU internal PCB',(-4.22,.35,.02),(2.34,2.64,.065),pcb,.01)
+for x,y in [(-4.85,.62),(-4.43,.62)]:
+    cyl('PSU bulk capacitor',(x,y,.45),.16,.72,black,24)
+    cyl('PSU capacitor cap',(x,y,.812),.151,.008,silver,24)
+for x in [-3.8,-3.58,-3.36]:box('PSU internal heat spreader',(x,.45,.42),(.045,1.64,.69),silver,.006)
+box('PSU transformer',(-4.48,-.48,.33),(.65,.57,.55),navy,.025)
 for radius in [.25,.43,.61,.79,.97,1.07]:ring('PSU wire grille',(-4.22,.35,1.655),radius,.014,navy)
 for a in [math.pi/4,-math.pi/4]:
     o=box('Grille brace',(-4.22,.35,1.635),(2.18,.032,.028),silver,.009);o.rotation_euler.z=a
@@ -336,15 +354,29 @@ part='wiringEps'
 box('EPS PSU plug',(-3.53,1.15,.82),(.24,.34,.24),nylon,.018)
 box('EPS board plug',(.95,-2.83,.39),(.49,.25,.18),nylon,.015)
 box('EPS locking tab',(.95,-2.66,.35),(.16,.055,.11),black,.008)
+eps_wires=[]
 for i in range(4):
     d=(i-1.5)*.06
     for layer in [-1,1]:
         dz=layer*.028
-        cable('EPS 8 sleeved wire',[
+        eps_wires.append(cable('EPS 8 sleeved wire',[
             (-3.41,1.15+d,.82+dz),(-3.34,1.55+d,.54+dz),(-3.34,.35+d,.14+dz),
             (-3.34,-2.80+d,.14+dz),(-2.90,-3.40+d,.14+dz),(.35,-3.40+d,.23+dz),
-            (.95+d,-3.27,.56+dz),(.95+d,-3.08,.62+dz),(.95+d,-2.83+dz,.48)],.024,sleeve)
-box('EPS cable comb',(-1.70,-3.40,.16),(.07,.28,.13),navy,.012)
+            (.95+d,-3.27,.56+dz),(.95+d,-3.08,.62+dz),(.95+d,-2.83+dz,.48)],.024,sleeve))
+# AUTO Bezier handles bow past the control polygon. Fit the comb to the actual
+# exported cable cross-sections, not to the approximate control-point positions.
+crossings=[]
+for wire in eps_wires:
+    section=[]
+    for edge in wire.data.edges:
+        a,b=[wire.matrix_world @ wire.data.vertices[i].co for i in edge.vertices]
+        if (a.x+1.70)*(b.x+1.70)<0:
+            section.append(a.lerp(b,(-1.70-a.x)/(b.x-a.x)))
+    assert len(section)>=6, 'EPS comb must intersect every physical sleeve'
+    crossings.append(sum(section,Vector())/len(section))
+cy=sum(p.y for p in crossings)/8;cz=sum(p.z for p in crossings)/8
+comb=box('EPS cable comb',(-1.70,cy,cz),(.075,max(p.y for p in crossings)-min(p.y for p in crossings)+.085,max(p.z for p in crossings)-min(p.z for p in crossings)+.085),navy,.009)
+for p in crossings:drill(comb,p,.0265,.14,axis='X',sides=12)
 part='base'
 text('CPU / EPS',(-1.9,-3.72,-.175),.09,white)
 # Deterministic assembly checks run before export; a regression must fail the build.
@@ -359,6 +391,7 @@ assert fan_x-.11 > fin_edge and fan_x+.11 < 1.58-.06-.3, 'Tower fan sits between
 assert cooler_fins[0]-.006 > .625 and cooler_fins[-1]+.006 < 2.44, 'Fin stack between clamp and cover'
 # Shared deterministic material maps and detailed geometry.
 exec(compile(open(os.path.join(ROOT,'scripts','atlas_details.py'),encoding='utf-8').read(),'atlas_details.py','exec'))
+exec(compile(open(os.path.join(ROOT,'scripts','atlas_precision.py'),encoding='utf-8').read(),'atlas_precision.py','exec'))
 # Merge static geometry by material, retain independently pivoted fan rotors.
 for key,objects in groups.items():
     parent=bpy.data.objects.new(key,None); bpy.context.collection.objects.link(parent)
@@ -371,6 +404,7 @@ for key,objects in groups.items():
             if rotor not in rotors:
                 target=bpy.data.objects.new('rotor_'+str(len(rotors)),None);bpy.context.collection.objects.link(target)
                 target.parent=parent;target.location=batch[0]['pivot'];target['rotorAxis']=batch[0]['rotorAxis']
+                target['bladeCount']=batch[0]['bladeCount']
                 rotors[rotor]=target
             target=rotors[rotor]
         bpy.ops.object.select_all(action='DESELECT')
@@ -384,4 +418,3 @@ bpy.context.preferences.filepaths.save_version=0
 bpy.ops.outliner.orphans_purge(do_recursive=True)
 exec(compile(open(os.path.join(ROOT,'scripts','finish_atlas.py'),encoding='utf-8').read(),'finish_atlas.py','exec'))
 print('ATLAS_EXPORT_COMPLETE / GPU perpendicular; PCIe contacts Z=.175..315; CPU surface .404 / cooler interface .404')
-

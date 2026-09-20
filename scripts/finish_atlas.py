@@ -43,6 +43,11 @@ for obj in bpy.data.objects:
         mod=obj.modifiers.new('Subpixel type contours','DECIMATE');mod.ratio=.55
         bpy.context.view_layer.objects.active=obj;bpy.ops.object.modifier_apply(modifier=mod.name)
         obj['lettering_optimized']=True
+    if obj.type=='MESH' and obj.name=='psu_Porcelain' and not obj.get('label_optimized'):
+        # Small enclosure lettering needs legible contours, not dense font tessellation.
+        mod=obj.modifiers.new('Enclosure label contours','DECIMATE');mod.ratio=.50
+        bpy.context.view_layer.objects.active=obj;bpy.ops.object.modifier_apply(modifier=mod.name)
+        obj['label_optimized']=True
 # Rotate the installed board assembly as one unit. Roots stay at the origin:
 # the web scene applies disassembly translations to them every frame.
 # PSU translation is baked into its children (including the rotor pivot).

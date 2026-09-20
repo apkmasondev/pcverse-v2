@@ -9,9 +9,13 @@ def micro_material(mat, kind, strength=.12):
     yy,xx=np.mgrid[0:size,0:size]
     rng=np.random.default_rng(42)
     grain=rng.random((size,size))
-    if kind=='brushed': height=.5+.17*np.sin(yy*1.7)+.10*grain
-    elif kind=='woven': height=.5+.18*np.sin((xx+yy)*.5)*np.sin((xx-yy)*.5)+.04*grain
-    else: height=.5+.11*grain
+    if kind=='brushed':
+        # Fine irregular brushing, not regular corrugations painted across metal.
+        lines=rng.random((size,1))
+        height=.5+.09*lines+.018*grain
+    elif kind=='woven': height=.5+.15*np.sin((xx+yy)*.5)*np.sin((xx-yy)*.5)+.025*grain
+    elif kind=='powder': height=.5+.075*grain+.03*(np.roll(grain,1,0)+np.roll(grain,1,1))
+    else: height=.5+.045*grain
     dx=(np.roll(height,-1,1)-np.roll(height,1,1))*strength
     dy=(np.roll(height,-1,0)-np.roll(height,1,0))*strength
     normal=np.stack([-dx,-dy,np.ones_like(dx)],axis=-1)
@@ -22,17 +26,29 @@ def micro_material(mat, kind, strength=.12):
         img.colorspace_settings.name='Non-Color';img.pixels.foreach_set(pixels.ravel());img.pack()
         return img
     nodes=mat.node_tree.nodes;links=mat.node_tree.links;p=nodes.get('Principled BSDF')
+    uv=nodes.new('ShaderNodeUVMap');uv.uv_map='Microstructure'
     tex=nodes.new('ShaderNodeTexImage');tex.image=bitmap(' normal',rgba)
-    n=nodes.new('ShaderNodeNormalMap');links.new(tex.outputs['Color'],n.inputs['Color']);links.new(n.outputs['Normal'],p.inputs['Normal'])
+    links.new(uv.outputs['UV'],tex.inputs['Vector'])
+    n=nodes.new('ShaderNodeNormalMap');n.uv_map='Microstructure';links.new(tex.outputs['Color'],n.inputs['Color']);links.new(n.outputs['Normal'],p.inputs['Normal'])
     rough=p.inputs['Roughness'].default_value
-    rgba[:,:,:3]=np.clip(rough+(grain[:,:,None]-.5)*.14,.08,.98)
-    tex=nodes.new('ShaderNodeTexImage');tex.image=bitmap(' roughness',rgba)
-    links.new(tex.outputs['Color'],p.inputs['Roughness'])
+    # The board already has a roughness map aligned to its routes and vias.
+    if not p.inputs['Roughness'].is_linked:
+        rgba[:,:,:3]=np.clip(rough+(grain[:,:,None]-.5)*(.045 if kind=='polymer' else .08),.08,.98)
+        tex=nodes.new('ShaderNodeTexImage');tex.image=bitmap(' roughness',rgba)
+        links.new(uv.outputs['UV'],tex.inputs['Vector'])
+        links.new(tex.outputs['Color'],p.inputs['Roughness'])
+    if mat==pt:
+        for node in nodes:
+            if node.type=='TEX_IMAGE' and node.image.colorspace_settings.name=='sRGB':
+                links.new(uv.outputs['UV'],node.inputs['Vector'])
 
-for mat,kind,strength in [(silver,'brushed',.28),(gold,'brushed',.15),(navy,'powder',.5),(nylon,'polymer',.28),(black,'polymer',.22),(sleeve,'woven',.7),(pcb,'laminate',.18),(mb,'laminate',.16),(gf,'brushed',.2),(pt,'powder',.25),(rt,'brushed',.18),(ct,'brushed',.14)]:
+for mat,kind,strength in [(silver,'brushed',.28),(gold,'brushed',.15),(navy,'powder',.5),(nylon,'polymer',.28),(black,'polymer',.22),(sleeve,'woven',.7),(pcb,'laminate',.18),(mb,'laminate',.5),(gf,'brushed',.2),(pt,'powder',.25),(rt,'brushed',.18),(ct,'brushed',.14)]:
     micro_material(mat,kind,strength)
+micro_material(st,'laminate',.5)
 
 ink=material('Warm white silkscreen',(.52,.58,.55),0,.85)
+# Dark lettering for the one light-coloured label in the exhibit.
+plate=material('Rating plate silkscreen',(.05,.06,.065),0,.72)
 chip=material('Moulded silicon packages',(.018,.022,.024),.04,.8)
 blue=material('USB blue insert',(.015,.13,.3),0,.52)
 red=material('USB red insert',(.26,.02,.02),0,.52)
@@ -49,10 +65,12 @@ def screw(x,y,z,r=.038):
     for angle in [0,math.pi/2]:
         o=box('Cross recess',(x,y,z+.014),(r*1.35,.012,.003),black,0);o.rotation_euler.z=angle
 
-def header(label,x,y,cols=4):
+def header(label,x,y,cols=4,rows=2):
     box(label+' housing',(x,y,.135),(cols*.085+.06,.19,.12),black,.008)
     for i in range(cols):
-        for j in [-1,1]:box(label+' pin',(x+(i-(cols-1)/2)*.085,y+j*.045,.23),(.024,.024,.16),gold,.002)
+        for j in ([-1,1] if rows==2 else [0]):box(label+' pin',(x+(i-(cols-1)/2)*.085,y+j*.045,.23),(.024,.024,.16),gold,.002)
+    if rows==1:
+        box(label+' keyed guide',(x,y+.075,.23),(cols*.085+.04,.045,.18),black,.006)
     text(label,(x-cols*.043,y-.22,.075),.06,ink)
 
 part='board'
@@ -113,8 +131,8 @@ for x,y in [(-.9,-2.46),(.02,-2.55),(.75,-.94)]:
     for i in range(4):smd(x-.13+i*.085,y-.27)
 header('USB_2',-.32,-2.88,5)
 header('F_PANEL',.48,-2.88,5)
-header('CPU_FAN',.72,2.43,4)
-header('SYS_FAN',2.22,-2.53,3)
+header('CPU_FAN',.72,2.43,4,1)
+header('SYS_FAN',2.22,-2.53,4,1)
 for y in [-1.18,-1.58]:
     box('SATA right angle header',(2.16,y,.18),(.43,.30,.22),black,.015)
     box('SATA port cavity',(2.382,y,.18),(.012,.22,.115),sleeve,.004)
@@ -135,24 +153,77 @@ for x in [-.82,.82]:
     for y in [.38,1.82]:screw(x,y,-.171)
 for x in [1.35,1.58,1.81,2.04]:
     for i in range(28):cyl('DIMM solder pad',(x,.03+i*.086,-.075),.018,.006,silver,8)
+# An x16 slot is soldered in two staggered rows, interrupted by the key.
+for y in [-.57,-1.95]:
+    for i in range(82):
+        x=-1.497+i*.0329
+        if abs(x+.93)<.075:continue
+        cyl('PCIe solder pad',(x,y+(-.043 if i%2 else .043),-.075),.013,.006,silver,6)
 
 part='ssd'
 for x in [-.72,-.22]:
-    box('NAND flash package',(x,-1.43,.259),(.40,.34,.092),chip,.008)
-    text('PCV NAND',(x-.17,-1.45,.307),.05,ink)
-    text('256G  TLC',(x-.16,-1.53,.307),.036,ink)
-box('NVMe controller',(.24,-1.43,.255),(.28,.29,.084),chip,.008)
-text('PCV',(.14,-1.43,.299),.065,ink)
-text('CTRL',(.14,-1.51,.299),.047,ink)
+    box('NAND flash package',(x,-1.43,.257),(.40,.34,.092),chip,.008)
+    text('PCV NAND',(x-.17,-1.45,.305),.05,ink)
+    text('256G  TLC',(x-.16,-1.53,.305),.036,ink)
+box('NVMe controller',(.24,-1.43,.253),(.28,.29,.084),chip,.008)
+text('PCV',(.14,-1.43,.297),.065,ink)
+text('CTRL',(.14,-1.51,.297),.047,ink)
 for x in [-.89,-.61,-.32,-.03,.24,.47]:
-    for y in [-1.635,-1.22]:smd(x,y,.24,.6)
+    for y in [-1.635,-1.22]:smd(x,y,.2215,.6)
 for i in range(17):
     y=-1.639+i*.025
     if i not in [4,5]:box('M2 gold contact',(.633,y,.214),(.105,.016,.014),gold,.001)
 screw(-1.04,-1.43,.25,.049)
 for x in [-.65,-.05]:box('Underside NAND',(x,-1.43,.132),(.4,.32,.04),chip,.006)
+# Solder mask and routing on the back of the drive, not a flat slab of resin.
+surface('SSD underside mask',[(.69,-1.67,.1515),(-1.09,-1.67,.1515),
+                              (-1.09,-1.19,.1515),(.69,-1.19,.1515)],st,
+        [(0,0),(.972,0),(.972,1),(0,1)])
+# Rating plate laid over the packages, the way a drive leaves the factory.
+# Viewed from below the reading direction is -X, so artwork runs that way too.
+box('SSD rating plate',(-.35,-1.43,.1085),(1.04,.32,.008),white,.003)
+box('SSD plate accent spine',(.145,-1.43,.1085),(.05,.32,.0098),orange,.002)
+
+def flat_code(name,cells,mat,z=.1040):
+    # Two triangles per dark cell: a crisp 2D code without a bitmap texture.
+    verts=[];faces=[]
+    for x0,y0,x1,y1 in cells:
+        n=len(verts);verts.extend([(x0,y0,z),(x1,y0,z),(x1,y1,z),(x0,y1,z)])
+        faces.append((n,n+1,n+2,n+3))
+    mesh=bpy.data.meshes.new(name);mesh.from_pydata(verts,[],faces);mesh.update()
+    for p in mesh.polygons:p.flip()
+    o=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(o)
+    return keep(o,mat)
+
+MODULES=19;CELL=.0102;QR_X=-.450;QR_Y=-1.3335
+code=np.random.default_rng(7).random((MODULES,MODULES))>.52
+for r0,c0 in [(0,0),(0,MODULES-7),(MODULES-7,0)]:
+    code[r0:r0+7,c0:c0+7]=True;code[r0+1:r0+6,c0+1:c0+6]=False
+    code[r0+2:r0+5,c0+2:c0+5]=True
+    if r0:code[r0-1,c0:c0+8]=False
+    else:code[r0+7,c0:c0+8]=False
+    if c0:code[max(r0-1,0):r0+8,c0-1]=False
+    else:code[r0:r0+8,c0+7]=False
+flat_code('SSD plate data matrix',
+          [(QR_X-c*CELL,QR_Y-r*CELL,QR_X-(c+1)*CELL,QR_Y-(r+1)*CELL)
+           for r in range(MODULES) for c in range(MODULES) if code[r,c]],plate)
+bar_x=-.676;bars=[]
+for width in [.004,.007,.004,.009,.004,.004,.007,.004,.009,.007,.004,.004,.009,.004,.007,.004]:
+    bars.append((bar_x,-1.300,bar_x-width,-1.415));bar_x-=width+.0045
+flat_code('SSD plate barcode',bars,plate)
+flat_code('SSD plate agency mark',
+          [(-.690-i*.056,-1.455,-.728-i*.056,-1.512) for i in range(3)],plate)
+for body,dy,size in [('PCVERSE NVMe',.105,.034),('PCV-M2  1 TB',.040,.030),
+                     ('PCIe 4.0 x4',-.020,.024),('S/N PCV24A0517',-.075,.019)]:
+    o=text(body,(.09,-1.43+dy,.1035),size,plate)
+    # Mirrored about Y so the lettering reads the right way round from underneath.
+    o.rotation_euler.y=math.pi
 
 part='cpu'
+# Laser etching below the name printed in the heat spreader artwork.
+for body,y,size in [('8C / 16T   4.2 GHz',.93,.056),('PCV-01   65 W TDP',.82,.046)]:
+    o=text(body,(0,y,.4045),size,ink);bpy.context.view_layer.update()
+    o.location.x=-o.dimensions.x/2
 for i in range(24):
     for j in range(24):
         if 8<i<15 and 8<j<15:continue
@@ -217,4 +288,4 @@ part='wiringFan'
 box('CPU fan cable plug',(.72,2.43,.28),(.34,.16,.17),nylon,.012)
 
 # PBR non-colour maps must remain lossless in glTF; export AUTO preserves PNG.
-assert len([o for objects in groups.values() for o in objects if o.get('rotor')])==55
+assert len([o for objects in groups.values() for o in objects if o.get('rotor')])==59
